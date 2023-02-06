@@ -595,7 +595,6 @@ pub mod disable_builtin_loader_ownership_chains {
 }
 
 pub mod enable_accumulator_sysvar {
-    // note - this is just some random pubkey I generated on my local machine
     solana_sdk::declare_id!("BawYFA2oeA4CacxgQgLn6ZwRWDq1ZPXruUuEbko8oPT5");
 }
 
@@ -742,7 +741,7 @@ lazy_static! {
         (update_hashes_per_tick::id(), "Update desired hashes per tick on epoch boundary"),
         (enable_big_mod_exp_syscall::id(), "add big_mod_exp syscall #28503"),
         (disable_builtin_loader_ownership_chains::id(), "disable builtin loader ownership chains #29956"),
-        (enable_accumulator_sysvar::id(), "enable accumulator sysvar #<GH_ISSUE_NUMBER>"),
+        (enable_accumulator_sysvar::id(), "enable accumulator sysvar"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
