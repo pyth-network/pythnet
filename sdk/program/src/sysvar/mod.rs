@@ -86,6 +86,7 @@ use {
     lazy_static::lazy_static,
 };
 
+pub mod accumulator;
 pub mod clock;
 pub mod epoch_schedule;
 pub mod fees;

@@ -595,7 +595,6 @@ pub mod disable_builtin_loader_ownership_chains {
 }
 
 pub mod enable_accumulator_sysvar {
-    // note - this is just some random pubkey I generated on my local machine
     solana_sdk::declare_id!("BawYFA2oeA4CacxgQgLn6ZwRWDq1ZPXruUuEbko8oPT5");
 }
 

@@ -33,6 +33,8 @@ pub struct SysvarCache {
     #[allow(deprecated)]
     recent_blockhashes: Option<Arc<RecentBlockhashes>>,
     stake_history: Option<Arc<StakeHistory>>,
+    //TODO: add to cache?
+    // accumulator: Option<Arc<Accumulator>>,
 }
 
 impl SysvarCache {

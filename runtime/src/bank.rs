@@ -323,6 +323,7 @@ pub struct BankRc {
 
 #[cfg(RUSTC_WITH_SPECIALIZATION)]
 use solana_frozen_abi::abi_example::AbiExample;
+use solana_sdk::sysvar::accumulator::Accumulator;
 
 #[cfg(RUSTC_WITH_SPECIALIZATION)]
 impl AbiExample for BankRc {
@@ -1115,6 +1116,8 @@ pub struct Bank {
     pub fee_structure: FeeStructure,
 
     pub incremental_snapshot_persistence: Option<BankIncrementalSnapshotPersistence>,
+    
+    // TODO: add accumulator?
 }
 
 struct VoteWithStakeDelegations {
@@ -1411,6 +1414,9 @@ impl Bank {
             bank.update_stake_history(None);
         }
         bank.update_clock(None);
+        if bank.feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
+            bank.update_accumulator();
+        }
         bank.update_rent();
         bank.update_epoch_schedule();
         bank.update_recent_blockhashes();
@@ -1688,7 +1694,23 @@ impl Bank {
                 new.update_epoch_stakes(leader_schedule_epoch);
             }
         });
-
+        
+        // let (_, update_sysvars_time_us) =  if feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
+        //     measure_us!({
+        //         new.update_slot_hashes();
+        //         new.update_stake_history(Some(parent_epoch));
+        //         new.update_clock(Some(parent_epoch));
+        //         new.update_accumulator();
+        //         new.update_fees();
+        //     });
+        // } else {
+        //     measure_us!({
+        //         new.update_slot_hashes();
+        //         new.update_stake_history(Some(parent_epoch));
+        //         new.update_clock(Some(parent_epoch));
+        //         new.update_fees();
+        //     });
+        // };
         // Update sysvars before processing transactions
         let (_, update_sysvars_time_us) = measure_us!({
             new.update_slot_hashes();
@@ -2290,7 +2312,75 @@ impl Bank {
             )
         });
     }
+    
+    /*
+    fn update_accumulator(height) {
+        let mut accumulator = get_account(ACCUMULATOR_ADDRESS);
+    
+        // Add Price Proofs to Accumulator.
+        for price_feed in price_feeds():
+            let (new_accumulator, proof) = accumulator.add(price_feed);
+            let proof_pda = Program::find_program_id(&[price_feed.id, height]
+            proof_pda.serialize(PriceProof { price_feed, proof });
+            accumulator = new_accumulator;
+    
+        // Store new accumulator.
+        get_account(ACCUMULATOR).write(accumulator);
+    
+        // Store generated VAA for Wormhole to relay.
+            get_account(ACCUMULATOR_VAA).write(Vaa {
+                payload: serialize(Attest {
+                    accumulator,
+                    height,
+                    timestamp: now(),
+                })
+            });
+    }
+    */
+    fn update_accumulator(&self) {
+        /**
+        
+        // #[cfg(feature = "localnet")
+         #[cfg(all(feature = "localnet", not(feature = "devnet"), not(feature = "mainnet")))
+         fn id() -> Pubkey
+             pubkey!("Bridge1p5gheXUvJ6jGWGeCsgPKgnE3YgdGKRVCMY9o"
+         
 
+         // #[cfg(feature = "devnet")
+         #[cfg(all(feature = "devnet", not(feature = "localnet"), not(feature = "mainnet")))]
+        fn id() -> Pubkey {
+            pubkey!("3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5")
+        }
+        
+        // #[cfg(feature = "mainnet")]
+        #[cfg(all(feature = "mainnet", not(feature = "localnet"), not(feature = "devnet")))]
+        fn id() -> Pubkey {
+            pubkey!("worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth")
+        }
+        */
+        self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
+            let mut accumulator = account
+                .as_ref()
+                .map(|account| from_account::<Accumulator, _>(account).unwrap())
+                .unwrap_or_default();
+            // get price feeds
+            //let price_feeds = self.get_account_with_fixed_root(&Pubkey::new_unique()).unwrap();
+            //
+            accumulator.add(self.slot());
+            
+            create_account::<sysvar::accumulator::Accumulator>(
+                &accumulator,
+                self.inherit_specially_retained_account_fields(account),
+            )
+        });
+        
+        let (proof_pda, proof_bump) = Pubkey::find_program_address(&[b"accumulator"], &solana_sdk::pubkey::new_unique());
+        
+        //create proofs
+        //create VAA
+    }
+    
+    
     pub fn epoch_duration_in_years(&self, prev_epoch: Epoch) -> f64 {
         // period: time that has passed as a fraction of a year, basically the length of
         //  an epoch as a fraction of a year
