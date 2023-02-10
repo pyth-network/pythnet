@@ -45,11 +45,26 @@
 //! # Ok::<(), anyhow::Error>(())
 //! ```
 
-pub use crate::accumulator::Accumulator;
 use crate::sysvar::Sysvar;
+pub use crate::{
+    account_info::AccountInfo, accumulator::Accumulator, program_error::ProgramError,
+    slot_history::SlotHistory,
+};
 
 crate::declare_sysvar_id!("SysvarAccumu1ator11111111111111111111111111", Accumulator);
 impl Sysvar for Accumulator {
-	//TODO: is this needed? do we ever need to use the accumulator sysvar in a contract?
-	// impl_sysvar_get!(sol_get_accumulator_sysvar);
+    //TODO: is this needed? do we ever need to use the accumulator sysvar in a contract?
+    // impl_sysvar_get!(sol_get_accumulator_sysvar);
+
+    //TODO: from slot_history.rs - needed?
+    fn size_of() -> usize {
+        // TODO: this is just a random dummy value for now. update to correct value.
+        // hard-coded so that we don't have to construct an empty
+        4096 // golden, update if MAX_ENTRIES changes
+    }
+
+    fn from_account_info(_account_info: &AccountInfo) -> Result<Self, ProgramError> {
+        // This sysvar is too large to bincode::deserialize in-program
+        Err(ProgramError::UnsupportedSysvar)
+    }
 }

@@ -107,6 +107,7 @@ use {
             AccountSharedData, InheritableAccountFields, ReadableAccount, WritableAccount,
         },
         account_utils::StateMut,
+        accumulator::{Accumulator, DummyPriceProof},
         bpf_loader_upgradeable::{self, UpgradeableLoaderState},
         clock::{
             BankId, Epoch, Slot, SlotCount, SlotIndex, UnixTimestamp, DEFAULT_HASHES_PER_TICK,
@@ -138,6 +139,7 @@ use {
         nonce_account,
         packet::PACKET_DATA_SIZE,
         precompiles::get_precompiles,
+        price_proof,
         pubkey::Pubkey,
         saturating_add_assign, secp256k1_program,
         signature::{Keypair, Signature},
@@ -168,6 +170,7 @@ use {
         ops::{Deref, RangeInclusive},
         path::PathBuf,
         rc::Rc,
+        str::FromStr,
         sync::{
             atomic::{
                 AtomicBool, AtomicI64, AtomicU64, AtomicUsize,
@@ -323,7 +326,6 @@ pub struct BankRc {
 
 #[cfg(RUSTC_WITH_SPECIALIZATION)]
 use solana_frozen_abi::abi_example::AbiExample;
-use solana_sdk::sysvar::accumulator::Accumulator;
 
 #[cfg(RUSTC_WITH_SPECIALIZATION)]
 impl AbiExample for BankRc {
@@ -1116,7 +1118,6 @@ pub struct Bank {
     pub fee_structure: FeeStructure,
 
     pub incremental_snapshot_persistence: Option<BankIncrementalSnapshotPersistence>,
-    
     // TODO: add accumulator?
 }
 
@@ -1414,7 +1415,10 @@ impl Bank {
             bank.update_stake_history(None);
         }
         bank.update_clock(None);
-        if bank.feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
+        if bank
+            .feature_set
+            .is_active(&feature_set::enable_accumulator_sysvar::id())
+        {
             bank.update_accumulator();
         }
         bank.update_rent();
@@ -1694,30 +1698,25 @@ impl Bank {
                 new.update_epoch_stakes(leader_schedule_epoch);
             }
         });
-        
-        // let (_, update_sysvars_time_us) =  if feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
-        //     measure_us!({
-        //         new.update_slot_hashes();
-        //         new.update_stake_history(Some(parent_epoch));
-        //         new.update_clock(Some(parent_epoch));
-        //         new.update_accumulator();
-        //         new.update_fees();
-        //     });
-        // } else {
-        //     measure_us!({
-        //         new.update_slot_hashes();
-        //         new.update_stake_history(Some(parent_epoch));
-        //         new.update_clock(Some(parent_epoch));
-        //         new.update_fees();
-        //     });
-        // };
-        // Update sysvars before processing transactions
+
         let (_, update_sysvars_time_us) = measure_us!({
             new.update_slot_hashes();
             new.update_stake_history(Some(parent_epoch));
             new.update_clock(Some(parent_epoch));
+            if feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
+                info!("Updating accumulator. Parent_epoch: {}", parent_epoch);
+                new.update_accumulator();
+            }
             new.update_fees();
         });
+
+        // // Update sysvars before processing transactions
+        // let (_, update_sysvars_time_us) = measure_us!({
+        //     new.update_slot_hashes();
+        //     new.update_stake_history(Some(parent_epoch));
+        //     new.update_clock(Some(parent_epoch));
+        //     new.update_fees();
+        // });
 
         let (_, fill_sysvar_cache_time_us) = measure_us!(new.fill_missing_sysvar_cache_entries());
         time.stop();
@@ -2304,6 +2303,7 @@ impl Bank {
         if epoch == Some(self.epoch()) {
             return;
         }
+
         // if I'm the first Bank in an epoch, ensure stake_history is updated
         self.update_sysvar_account(&sysvar::stake_history::id(), |account| {
             create_account::<sysvar::stake_history::StakeHistory>(
@@ -2312,75 +2312,86 @@ impl Bank {
             )
         });
     }
-    
-    /*
-    fn update_accumulator(height) {
-        let mut accumulator = get_account(ACCUMULATOR_ADDRESS);
-    
-        // Add Price Proofs to Accumulator.
-        for price_feed in price_feeds():
-            let (new_accumulator, proof) = accumulator.add(price_feed);
-            let proof_pda = Program::find_program_id(&[price_feed.id, height]
-            proof_pda.serialize(PriceProof { price_feed, proof });
-            accumulator = new_accumulator;
-    
-        // Store new accumulator.
-        get_account(ACCUMULATOR).write(accumulator);
-    
-        // Store generated VAA for Wormhole to relay.
-            get_account(ACCUMULATOR_VAA).write(Vaa {
-                payload: serialize(Attest {
-                    accumulator,
-                    height,
-                    timestamp: now(),
-                })
-            });
-    }
-    */
-    fn update_accumulator(&self) {
-        /**
-        
-        // #[cfg(feature = "localnet")
-         #[cfg(all(feature = "localnet", not(feature = "devnet"), not(feature = "mainnet")))
-         fn id() -> Pubkey
-             pubkey!("Bridge1p5gheXUvJ6jGWGeCsgPKgnE3YgdGKRVCMY9o"
-         
 
-         // #[cfg(feature = "devnet")
-         #[cfg(all(feature = "devnet", not(feature = "localnet"), not(feature = "mainnet")))]
-        fn id() -> Pubkey {
-            pubkey!("3u8hJUVTA4jH1wYAyUur7FFZVQ8H635K3tSHHF4ssjQ5")
-        }
-        
-        // #[cfg(feature = "mainnet")]
-        #[cfg(all(feature = "mainnet", not(feature = "localnet"), not(feature = "devnet")))]
-        fn id() -> Pubkey {
-            pubkey!("worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth")
-        }
-        */
+    pub fn accumulator(&self) -> sysvar::accumulator::Accumulator {
+        from_account(
+            &self
+                .get_account(&sysvar::accumulator::id())
+                .unwrap_or_default(),
+        )
+        .unwrap_or_default()
+    }
+
+    fn update_accumulator(&self) {
         self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
             let mut accumulator = account
                 .as_ref()
                 .map(|account| from_account::<Accumulator, _>(account).unwrap())
                 .unwrap_or_default();
             // get price feeds
-            //let price_feeds = self.get_account_with_fixed_root(&Pubkey::new_unique()).unwrap();
-            //
+            // let price_feeds = self.get_account_with_fixed_root(&Pubkey::new_unique()).unwrap();
+
             accumulator.add(self.slot());
-            
+
             create_account::<sysvar::accumulator::Accumulator>(
                 &accumulator,
                 self.inherit_specially_retained_account_fields(account),
             )
         });
-        
-        let (proof_pda, proof_bump) = Pubkey::find_program_address(&[b"accumulator"], &solana_sdk::pubkey::new_unique());
-        
-        //create proofs
-        //create VAA
+
+        let wormhole_pubkey =
+            Pubkey::from_str("worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth").unwrap();
+        let pyth_pubkey = Pubkey::from_str("FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH").unwrap();
+        // TODO: these are just dummy/filler values and PDA addresses for now
+        let clock = self.clock();
+        let (proof_pda, proof_bump) = Pubkey::find_program_address(
+            &[b"accumulator", &clock.slot.to_le_bytes()],
+            &wormhole_pubkey,
+        );
+        info!("update_accumulator proof_pda: {}", proof_pda);
+
+        let (feed_id_key, _) = Pubkey::find_program_address(
+            &[b"feed".as_ref(), &clock.slot.to_le_bytes()],
+            &pyth_pubkey,
+        );
+
+        //TODO: ring buffer logic
+
+        // self.store_account(&proof_pda, &new_proof_account);
+        // create proofs
+
+        // from self.compute_active_feature_set()
+        // if feature::to_account(&feature, &mut account).is_some() {
+        //     self.store_account(feature_id, &account);
+        // }
+        let price_proof = DummyPriceProof {
+            price: 15,
+            bump: proof_bump,
+            feed_id: feed_id_key,
+        };
+
+        let new_proof_account = AccountSharedData::from(price_proof::create_account(
+            &price_proof,
+            self.get_minimum_balance_for_rent_exemption(
+                bincode::serialized_size(&price_proof).unwrap() as usize,
+            ),
+            &wormhole_pubkey,
+        ));
+        // When new sysvar comes into existence (with RENT_UNADJUSTED_INITIAL_BALANCE lamports),
+        // this code ensures that the sysvar's balance is adjusted to be rent-exempt.
+        //
+        // More generally, this code always re-calculates for possible sysvar data size change,
+        // although there is no such sysvars currently.
+        // self.adjust_sysvar_balance_for_rent(&mut new_account);
+        self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
+
+        // create VAA
+        // TODO: any security concerns with the validators directly generating the VAAs
+        //      1. is it possible for a "rogue" validator to join the network
+        //      and started generating VAAs and what would happen?
+        //
     }
-    
-    
+
     pub fn epoch_duration_in_years(&self, prev_epoch: Epoch) -> f64 {
         // period: time that has passed as a fraction of a year, basically the length of
         //  an epoch as a fraction of a year
@@ -20347,6 +20358,88 @@ pub(crate) mod tests {
                 .0
                 .rent_epoch(),
             RENT_EXEMPT_RENT_EPOCH
+        );
+    }
+
+    #[test]
+    fn test_update_accumulator() {
+        let leader_pubkey = solana_sdk::pubkey::new_rand();
+        let GenesisConfigInfo {
+            genesis_config,
+            voting_keypair,
+            ..
+        } = create_genesis_config_with_leader(5, &leader_pubkey, 3);
+        let mut bank = Bank::new_for_tests(&genesis_config);
+        // Advance past slot 0, which has special handling.
+        bank = new_from_parent(&Arc::new(bank));
+        bank = new_from_parent(&Arc::new(bank));
+        assert_eq!(
+            bank.clock().unix_timestamp,
+            bank.unix_timestamp_from_genesis()
+        );
+
+        bank.update_clock(None);
+        assert_eq!(
+            bank.clock().unix_timestamp,
+            bank.unix_timestamp_from_genesis()
+        );
+
+        update_vote_account_timestamp(
+            BlockTimestamp {
+                slot: bank.slot(),
+                timestamp: bank.unix_timestamp_from_genesis() - 1,
+            },
+            &bank,
+            &voting_keypair.pubkey(),
+        );
+        bank.update_clock(None);
+        assert_eq!(
+            bank.clock().unix_timestamp,
+            bank.unix_timestamp_from_genesis()
+        );
+
+        update_vote_account_timestamp(
+            BlockTimestamp {
+                slot: bank.slot(),
+                timestamp: bank.unix_timestamp_from_genesis(),
+            },
+            &bank,
+            &voting_keypair.pubkey(),
+        );
+        bank.update_clock(None);
+        assert_eq!(
+            bank.clock().unix_timestamp,
+            bank.unix_timestamp_from_genesis()
+        );
+
+        update_vote_account_timestamp(
+            BlockTimestamp {
+                slot: bank.slot(),
+                timestamp: bank.unix_timestamp_from_genesis() + 1,
+            },
+            &bank,
+            &voting_keypair.pubkey(),
+        );
+        bank.update_clock(None);
+        assert_eq!(
+            bank.clock().unix_timestamp,
+            bank.unix_timestamp_from_genesis() + 1
+        );
+
+        // Timestamp cannot go backward from ancestor Bank to child
+        bank = new_from_parent(&Arc::new(bank));
+        update_vote_account_timestamp(
+            BlockTimestamp {
+                slot: bank.slot(),
+                timestamp: bank.unix_timestamp_from_genesis() - 1,
+            },
+            &bank,
+            &voting_keypair.pubkey(),
+        );
+        bank.update_clock(None);
+        assert_eq!(
+            bank.clock().unix_timestamp,
+            bank.unix_timestamp_from_genesis()
         );
     }
 }
