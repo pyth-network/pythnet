@@ -41,6 +41,9 @@ jobs:
         run: aws ec2-instance-connect send-ssh-public-key --instance-id i-01240568be6ee774f --availability-zone eu-west-2a --instance-os-user ubuntu --ssh-public-key file://temp_key.pub
       - name: Upload build to node
         run: scp -o "StrictHostKeyChecking no" -i temp_key pythnet.zip ubuntu@35.177.135.33:/home/ubuntu
-      - name: Compile build
-        run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 sudo cp /home/ubuntu/pythnet.zip /opt/solana && sudo unzip /opt/solana/pythnet.zip -d pythnet && sudo /opt/solana/pythnet/cargo build --release
-   
+      - name: Move build
+        run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 sudo cp /home/ubuntu/pythnet.zip /opt/solana
+      - name: Unzip
+        run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 sudo unzip /opt/solana/pythnet.zip -d pythnet
+      - name: Compile new release build
+        run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 sudo /opt/solana/pythnet/cargo build --release
