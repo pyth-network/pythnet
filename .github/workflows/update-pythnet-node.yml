@@ -40,4 +40,4 @@ jobs:
       - name: Send key to node
         run: aws ec2-instance-connect send-ssh-public-key --instance-id i-072c26a75a798ba1d --availability-zone eu-west-2a --instance-os-user ubuntu --ssh-public-key file://temp_key.pub
       - name: Send command to node
-        run: ssh -o "IdentitiesOnly=yes" -o "UserKnownHostsFile=/github/home/.ssh/known_hosts" -i temp_key ubuntu@13.40.28.67 whoami
+        run: ssh -o "StrictHostKeyChecking no" -i temp_key ubuntu@13.40.28.67 whoami
