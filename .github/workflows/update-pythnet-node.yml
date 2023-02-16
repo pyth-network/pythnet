@@ -39,7 +39,7 @@ jobs:
         run: ssh-keygen -t rsa -f temp_key
       - name: Send key to instance
         run: aws ec2-instance-connect send-ssh-public-key \
-                --instance-id i-001234a4bf70dec41EXAMPLE \
+                --instance-id i-072c26a75a798ba1d \
                 --availability-zone eu-west-2a \
                 --instance-os-user ubuntu \
                 --ssh-public-key file://temp_key.pub
