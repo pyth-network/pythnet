@@ -1,4 +1,5 @@
 name: Updated Pythnet Node
+
 on:
   workflow_dispatch:
     inputs:
@@ -25,7 +26,7 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag }}
       - name: Assume AWS role
-        uses: aws-actions/configure-aws-credentials
+        uses: aws-actions/configure-aws-credentials@8a84b07f2009032ade05a88a28750d733cc30db1
         with:
           role-to-assume: arn:aws:iam::192824654885:role/github-pythnet-updater
           aws-region: eu-west-2
