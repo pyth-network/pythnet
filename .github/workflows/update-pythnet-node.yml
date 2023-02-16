@@ -48,4 +48,4 @@ jobs:
       - name: Set perms
         run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 sudo chown -hR solana /opt/solana/pythnet
       - name: Compile new release build
-        run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 su solana -c "/opt/solana/build.sh"
+        run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 su solana -c "/opt/solana/build.sh" 
