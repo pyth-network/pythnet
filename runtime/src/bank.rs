@@ -33,9 +33,11 @@
 //! It offers a high-level API that signs transactions
 //! on behalf of the caller, and a low-level API for when they have
 //! already been signed and verified.
+use serde::Serialize;
 #[allow(deprecated)]
 use solana_sdk::recent_blockhashes_account;
 pub use solana_sdk::reward_type::RewardType;
+use std::iter::zip;
 use {
     crate::{
         account_overrides::AccountOverrides,
@@ -107,7 +109,7 @@ use {
             AccountSharedData, InheritableAccountFields, ReadableAccount, WritableAccount,
         },
         account_utils::StateMut,
-        accumulator::{Accumulator, DummyPriceProof},
+        accumulator::{load, Accumulator, DummyPriceProof, PriceAccount, PriceProof, PriceProofs},
         bpf_loader_upgradeable::{self, UpgradeableLoaderState},
         clock::{
             BankId, Epoch, Slot, SlotCount, SlotIndex, UnixTimestamp, DEFAULT_HASHES_PER_TICK,
@@ -326,6 +328,7 @@ pub struct BankRc {
 
 #[cfg(RUSTC_WITH_SPECIALIZATION)]
 use solana_frozen_abi::abi_example::AbiExample;
+use solana_sdk::accumulator::{AccumulatorAttestation, MessageData};
 
 #[cfg(RUSTC_WITH_SPECIALIZATION)]
 impl AbiExample for BankRc {
@@ -2323,39 +2326,112 @@ impl Bank {
     }
 
     fn update_accumulator(&self) {
-        self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
-            let mut accumulator = account
-                .as_ref()
-                .map(|account| from_account::<Accumulator, _>(account).unwrap())
-                .unwrap_or_default();
-            // get price feeds
-            // let price_feeds = self.get_account_with_fixed_root(&Pubkey::new_unique()).unwrap();
-
-            accumulator.add(self.slot());
-
-            create_account::<sysvar::accumulator::Accumulator>(
-                &accumulator,
-                self.inherit_specially_retained_account_fields(account),
-            )
-        });
+        //TODO: ring buffer logic
+        let clock = self.clock();
+        let ring_buffer_idx = clock.slot % 10_000;
+        // let ring_buffer_acct = Pubkey::find_program_address(&[
+        //         "Price",
+        //         ring_buffer_idx.to_be_bytes(),
+        // ], pythnet_program);
+        // We could store all the prices in a single account containing an ordered Vec<(PriceId, PriceHash)>
+        // which means we only increase the account size by 64 bytes per price feed.
+        // It being ordered means we can quickly pull prices out with a binary search
+        // and the price service only has to request one account for each proof.
+        // We won't blow up the validator disk with hundreds of thousands of accounts this way
 
         let wormhole_pubkey =
             Pubkey::from_str("worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth").unwrap();
         let pyth_pubkey = Pubkey::from_str("FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH").unwrap();
-        // TODO: these are just dummy/filler values and PDA addresses for now
-        let clock = self.clock();
         let (proof_pda, proof_bump) = Pubkey::find_program_address(
-            &[b"accumulator", &clock.slot.to_le_bytes()],
+            &[b"Proof", &ring_buffer_idx.to_be_bytes()],
             &wormhole_pubkey,
         );
+
+        self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
+            // TODO:
+            // 1. create proof PDAs
+            // 2. pass in proof PDAs into accumulator
+            //
+            // let mut accumulator = account
+            //     .as_ref()
+            //     .map(|account| from_account::<Accumulator, _>(account).unwrap())
+            //     .unwrap_or_default();
+            // get price feeds
+            // self.get_price_feeds()
+
+            // 1inch/USD pythnet price account
+            // let acct_1 = self
+            //     .get_account_with_fixed_root(
+            //         &Pubkey::from_str("7jAVut34sgRj6erznsYvLYvjc9GJwXTpN88ThZSDJ65G").unwrap(),
+            //     )
+            //     .unwrap();
+            // // APPL/USD pythnet price account
+            // let acct_2 = self
+            //     .get_account_with_fixed_root(
+            //         &Pubkey::from_str("5yixRcKtcs5BZ1K2FsLFwmES1MyA92d6efvijjVevQCw").unwrap(),
+            //     )
+            //     .unwrap();
+            let price_feed_ids = self.get_price_feeds();
+            let price_feeds_accts_1: Vec<AccountSharedData> = price_feed_ids
+                .iter()
+                .map(|pf| self.get_account_with_fixed_root(pf).unwrap())
+                .collect();
+            let price_feeds_accts: Vec<&PriceAccount> = price_feeds_accts_1
+                .iter()
+                .map(|ai| load::<PriceAccount>(ai.data()))
+                .collect();
+            // let price_feeds = vec![
+            //     load::<PriceAccount>(acct_1.data()),
+            //     load::<PriceAccount>(acct_2.data()),
+            // ];
+            // info!("price_feeds: {:?}", &price_feeds);
+            let (acc, proofs) = Accumulator::new(
+                // &price_feeds
+                &price_feeds_accts,
+            );
+            // assert_eq!(price_feeds.len(), proofs.len());
+            // accumulator.add(self.slot());
+            info!("acc: {:?}", &acc);
+            let zipped: Vec<PriceProof> = zip(
+                //TODO: this price_feeds should be the pubkeys for the price accounts
+                price_feed_ids,
+                proofs,
+            )
+            .map(|(pk, proof)| (pk, proof))
+            .collect();
+            let price_proofs = PriceProofs::new(zipped.as_ref());
+            info!("price_proof_pda - pubkey: {proof_pda:?} data: {price_proofs:?}");
+            let new_proof_account = AccountSharedData::from(price_proof::create_account2(
+                // &proofs,
+                // vec<PriceProof>
+                &price_proofs,
+                self.get_minimum_balance_for_rent_exemption(
+                    bincode::serialized_size(&price_proofs).unwrap() as usize,
+                ),
+                &wormhole_pubkey,
+            ));
+            self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
+
+            create_account::<sysvar::accumulator::Accumulator>(
+                &acc,
+                self.inherit_specially_retained_account_fields(account),
+            )
+
+            // Store generated VAA for Wormhole to relay.
+            //     get_account(ACCUMULATOR_VAA).write(Vaa {
+            //         payload: serialize(Attest {
+            //             accumulator,
+            //             ring_buffer_idx,
+            //             height,
+            //             timestamp: now(),
+            //         })
+            //     });
+            // }
+        });
+
+        // TODO: these are just dummy/filler values and PDA addresses for now
+
         info!("update_accumulator proof_pda: {}", proof_pda);
-
-        let (feed_id_key, _) = Pubkey::find_program_address(
-            &[b"feed".as_ref(), &clock.slot.to_le_bytes()],
-            &pyth_pubkey,
-        );
-
-        //TODO: ring buffer logic
 
         // self.store_account(&proof_pda, &new_proof_account);
         // create proofs
@@ -2364,32 +2440,72 @@ impl Bank {
         // if feature::to_account(&feature, &mut account).is_some() {
         //     self.store_account(feature_id, &account);
         // }
-        let price_proof = DummyPriceProof {
-            price: 15,
-            bump: proof_bump,
-            feed_id: feed_id_key,
-        };
-
-        let new_proof_account = AccountSharedData::from(price_proof::create_account(
-            &price_proof,
-            self.get_minimum_balance_for_rent_exemption(
-                bincode::serialized_size(&price_proof).unwrap() as usize,
-            ),
-            &wormhole_pubkey,
-        ));
         // When new sysvar comes into existence (with RENT_UNADJUSTED_INITIAL_BALANCE lamports),
         // this code ensures that the sysvar's balance is adjusted to be rent-exempt.
         //
         // More generally, this code always re-calculates for possible sysvar data size change,
         // although there is no such sysvars currently.
         // self.adjust_sysvar_balance_for_rent(&mut new_account);
-        self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
+        // self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
 
         // create VAA
         // TODO: any security concerns with the validators directly generating the VAAs
         //      1. is it possible for a "rogue" validator to join the network
         //      and started generating VAAs and what would happen?
         //
+        // I think we should in general be versioning the proofs embedded in the VAA, so it could be part of the params for the proof
+        //
+        // we could also literally send the ring buffer index in the message
+        // (as opposed to an incrementing count that has to get modded)
+        //
+        // Store generated VAA for Wormhole to relay.
+        let (accumulator_vaa_pda, _) = Pubkey::find_program_address(
+            &[b"Accumulator", &clock.slot.to_be_bytes()],
+            &wormhole_pubkey,
+        );
+
+        let msg_data = MessageData {
+            vaa_version: 1,
+            consistency_level: 1,
+            vaa_time: 1u32,
+            vaa_signature_account: Pubkey::default(),
+            submission_time: 1u32,
+            nonce: 0,
+            sequence: clock.slot,
+            emitter_chain: 26,
+            emitter_address: Pubkey::default().to_bytes(),
+            payload: AccumulatorAttestation {
+                accumulator: self.accumulator(),
+                ring_buffer_idx,
+                height: clock.slot,
+                timestamp: clock.unix_timestamp,
+            }
+            .serialize()
+            .unwrap(),
+        };
+
+        // let accumulator_account = AccountSharedData::from()
+
+        //     get_account(ACCUMULATOR_VAA).write(Vaa {
+        //         payload: serialize(Attest {
+        //             accumulator,
+        //             ring_buffer_idx,
+        //             height,
+        //             timestamp: now(),
+        //         })
+        //     });
+        // }
+    }
+
+    fn get_price_feeds(&self) -> Vec<Pubkey> {
+        // cache price feed keys, and last mapping account + number
+        // TODO: double check if mapping accounts can be inserted/deleted in the middle
+        vec![
+            // 1inch/usd
+            Pubkey::from_str("7jAVut34sgRj6erznsYvLYvjc9GJwXTpN88ThZSDJ65G").unwrap(),
+            // APPL/USD pythnet price account
+            Pubkey::from_str("5yixRcKtcs5BZ1K2FsLFwmES1MyA92d6efvijjVevQCw").unwrap(),
+        ]
     }
 
     pub fn epoch_duration_in_years(&self, prev_epoch: Epoch) -> f64 {

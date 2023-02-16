@@ -6052,6 +6052,7 @@ dependencies = [
  "console_error_panic_hook",
  "console_log",
  "curve25519-dalek",
+ "fast-math",
  "getrandom 0.2.3",
  "itertools",
  "js-sys",
