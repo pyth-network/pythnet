@@ -1,6 +1,9 @@
 name: Updated Pythnet Node
 
 on:
+  push:
+    branches:
+      - pyth
   workflow_dispatch:
     inputs:
       node:
