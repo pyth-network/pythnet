@@ -1,18 +1,10 @@
 name: Update Pythnet Node
 
 on:
-  workflow_dispatch:
-    inputs:
-      node:
-        required: true
-        type: choice
-        description: Which Pythnet node to upgrade
-        options:
-          - 1
-          - 2
-      tag:
-        required: true
-        type: string
+  push:
+    branches:
+      - pyth
+
 jobs:
   update-node:
     name: Pythnet Node Updater
