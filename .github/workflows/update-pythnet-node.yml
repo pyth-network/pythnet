@@ -47,4 +47,3 @@ jobs:
         run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@13.40.28.67 sudo unzip /opt/solana/pythnet.zip
       - name: Compile new release build
         run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@13.40.28.67 sudo /opt/solana/pythnet/cargo build --release
-
