@@ -44,7 +44,7 @@ jobs:
       - name: Move build
         run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 sudo cp /home/ubuntu/pythnet.zip /opt/solana
       - name: Unzip
-        run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 sudo unzip /opt/solana/pythnet.zip -d pythnet
+        run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 sudo unzip /opt/solana/pythnet.zip -d /opt/solana/pythnet
       - name: Set perms
         run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@35.177.135.33 sudo chown -hR solana /opt/solana/pythnet
       - name: Compile new release build
