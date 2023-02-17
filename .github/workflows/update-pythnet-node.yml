@@ -49,5 +49,5 @@ jobs:
         run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@$AWS_IP sudo unzip /opt/solana/pythnet.zip -d /opt/solana/pythnet
       - name: Set perms
         run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@$AWS_IP sudo chown -hR solana /opt/solana/pythnet
-      - name: Compile new release build
+      - name: Compile new release build and set it as active binary
         run: ssh -o "IdentitiesOnly=yes" -i temp_key ubuntu@$AWS_IP su solana -c "/opt/solana/build.sh" 
