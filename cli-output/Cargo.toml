@@ -14,7 +14,7 @@ Inflector = "0.11.4"
 base64 = "0.13.0"
 chrono = { version = "0.4.22", features = ["serde"] }
 clap = "2.33.0"
-console = "0.15.0"
+console = "0.15.5"
 humantime = "2.0.1"
 indicatif = "0.17.1"
 pretty-hex = "0.3.0"
