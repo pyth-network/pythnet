@@ -34,7 +34,7 @@ jobs:
           role-to-assume: arn:aws:iam::192824654885:role/github-pythnet-updater
           aws-region: eu-west-2
       - name: Set env vars
-        run: bash -c 'if [ "{{$github.event.inputs.node}}" = "1" ]; then echo "AWS_ID=i-01240568be6ee774f" >> $GITHUB_ENV && echo "AWS_IP=35.177.135.33" else AWS_ID=i-01240568be6ee774f" >> $GITHUB_ENV && echo "AWS_IP=35.177.135.33 fi'
+        run: bash -c 'if [ "{{$github.event.inputs.node}}" = "1" ]; then echo "AWS_ID=i-01240568be6ee774f" >> $GITHUB_ENV && echo "AWS_IP=35.177.135.33" else "AWS_ID=i-01240568be6ee774f" >> $GITHUB_ENV && echo "AWS_IP=35.177.135.33" >> $GITHUB_ENV fi'
       - name: Test env vars
         run: echo $AWS_ID
       - name: Zip directory
