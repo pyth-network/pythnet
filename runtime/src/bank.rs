@@ -2499,7 +2499,12 @@ impl Bank {
 
     fn get_price_feeds(&self) -> Vec<Pubkey> {
         // cache price feed keys, and last mapping account + number
-        // TODO: double check if mapping accounts can be inserted/deleted in the middle
+        // TODO:
+        //      1. double check if mapping accounts can be inserted/deleted in the middle
+        //          - product accounts can be deleted from non-tail mapping accounts but they
+        //              cannot have any price accounts
+        //          - can construct multiple mapping accounts where non-tail accounts have
+        //              empty space
         vec![
             // 1inch/usd
             Pubkey::from_str("7jAVut34sgRj6erznsYvLYvjc9GJwXTpN88ThZSDJ65G").unwrap(),
