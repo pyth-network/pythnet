@@ -779,11 +779,11 @@ impl AccumulatorAttestation {
         };
 
         let mut ring_buff_idx_vec = vec![0u8; mem::size_of::<u64>()];
-        bytes.read_exact(ring_buff_idx_vec.as_mut_slice());
+        bytes.read_exact(ring_buff_idx_vec.as_mut_slice())?;
         let ring_buffer_idx = u64::from_be_bytes(ring_buff_idx_vec.as_slice().try_into()?);
 
         let mut height_vec = vec![0u8; mem::size_of::<u64>()];
-        bytes.read_exact(height_vec.as_mut_slice());
+        bytes.read_exact(height_vec.as_mut_slice())?;
         let height = u64::from_be_bytes(height_vec.as_slice().try_into()?);
 
         let mut timestamp_vec = vec![0u8; mem::size_of::<UnixTimestamp>()];
