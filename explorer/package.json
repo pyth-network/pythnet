@@ -10,7 +10,7 @@
     "format:fix": "prettier --write \"**/*.+(js|jsx|ts|tsx|json|css|md)\""
   },
   "dependencies": {
-    "@blockworks-foundation/mango-client": "^3.6.7",
+    "@blockworks-foundation/mango-client": "^3.6.20",
     "@bonfida/spl-name-service": "^0.1.30",
     "@cloudflare/stream-react": "^1.2.0",
     "@metamask/jazzicon": "^2.0.0",
