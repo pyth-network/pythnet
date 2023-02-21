@@ -7,16 +7,21 @@
 //!
 //! [`sysvar::accumulator`]: crate::sysvar::accumulator
 
-use crate::account_info::AccountInfo;
-use crate::program_error::ProgramError;
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Serialize, Serializer};
-use solana_program::clock::UnixTimestamp;
-use std::cell::RefMut;
-use std::io::ErrorKind::InvalidData;
-use std::io::{Error, Read, Write};
-use std::ops::DerefMut;
-use std::{fmt, mem};
+use {
+    crate::{account_info::AccountInfo, program_error::ProgramError},
+    borsh::{BorshDeserialize, BorshSerialize},
+    hex::FromHexError,
+    schemars::JsonSchema,
+    serde::{Serialize, Serializer},
+    solana_program::clock::UnixTimestamp,
+    std::{
+        cell::RefMut,
+        fmt,
+        io::{Error, ErrorKind::InvalidData, Read, Write},
+        mem,
+        ops::DerefMut,
+    },
+};
 use {
     crate::{
         hash::{hashv, Hash},
@@ -26,9 +31,6 @@ use {
     // solana_merkle_tree::MerkleTree,
     std::{iter::FromIterator, mem::size_of, ops::Deref},
 };
-
-use hex::FromHexError;
-use schemars::JsonSchema;
 
 // TODO:
 //  1. decide what will be pulled out into a "pythnet" crate and what needs to remain in here
@@ -968,8 +970,7 @@ impl Clone for PostedMessageUnreliableData {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::accumulator::PayloadId::AccumulationAttestation;
+    use {super::*, crate::accumulator::PayloadId::AccumulationAttestation};
 
     impl Default for AccountHeader {
         fn default() -> Self {

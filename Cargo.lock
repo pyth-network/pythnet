@@ -6124,6 +6124,7 @@ dependencies = [
  "solana-frozen-abi 1.15.0",
  "solana-frozen-abi-macro 1.15.0",
  "solana-logger 1.15.0",
+ "solana-pyth",
  "solana-sdk-macro 1.15.0",
  "static_assertions",
  "thiserror",
@@ -6207,6 +6208,20 @@ dependencies = [
  "tokio-tungstenite",
  "tungstenite",
  "url 2.2.2",
+]
+
+[[package]]
+name = "solana-pyth"
+version = "1.15.0"
+dependencies = [
+ "bincode",
+ "borsh",
+ "bytemuck",
+ "fast-math",
+ "hex",
+ "rustc_version 0.4.0",
+ "serde",
+ "sha3 0.9.1",
 ]
 
 [[package]]
@@ -6464,6 +6479,7 @@ dependencies = [
  "solana-metrics",
  "solana-perf",
  "solana-program-runtime",
+ "solana-pyth",
  "solana-rayon-threadlimit",
  "solana-sdk 1.15.0",
  "solana-stake-program",

@@ -1,9 +1,10 @@
 //! Methods for working with price_proof accounts
 
-use crate::account::{AccountSharedData, WritableAccount};
-use borsh::BorshSerialize;
 pub use solana_program::accumulator::*;
-use solana_program::pubkey::Pubkey;
+use {
+    crate::account::{AccountSharedData, WritableAccount},
+    solana_program::pubkey::Pubkey,
+};
 
 /// Serialize a `PriceProof` into an `Account`'s data.
 pub fn to_account(price_proof: &DummyPriceProof, account: &mut AccountSharedData) -> Option<()> {
@@ -19,7 +20,7 @@ pub fn create_account(
     let data_len = bincode::serialized_size(&price_proof).unwrap() as usize;
 
     let mut account = AccountSharedData::new(lamports, data_len, owner);
-    to_account(&price_proof, &mut account).unwrap();
+    to_account(price_proof, &mut account).unwrap();
     // TODO: what to set for rent epoch here
     // account.rent_epoch = rent_epoch;
     account
@@ -44,18 +45,19 @@ pub fn to_account2(price_proof: &PriceProofs, account: &mut AccountSharedData) -
     bincode::serialize_into(account.data_as_mut_slice(), price_proof).ok()
 }
 
-pub fn create_accumulator_vaa_account(
-    posted_message: &PostedMessageUnreliableData,
-    lamports: u64,
-    owner: &Pubkey,
-) -> AccountSharedData {
-    let mut account = AccountSharedData::new(lamports, 10, owner);
-    account
-}
-
-pub fn to_accumulator_vaa_account(
-    posted_message: &PostedMessageUnreliableData,
-    account: &mut AccountSharedData,
-) -> Option<()> {
-    posted_message.serialize(account.data_as_mut_slice()).ok()
-}
+// pub fn create_accumulator_vaa_account(
+//     posted_message: &PostedMessageUnreliableData,
+//     lamports: u64,
+//     owner: &Pubkey,
+// ) -> AccountSharedData {
+//     AccountSharedData::new(lamports, 10, owner);
+// }
+//
+// pub fn to_accumulator_vaa_account(
+//     posted_message: &PostedMessageUnreliableData,
+//     account: &mut AccountSharedData,
+// ) -> Option<()> {
+//     posted_message
+//         .serialize(&mut account.data_as_mut_slice())
+//         .ok()
+// }

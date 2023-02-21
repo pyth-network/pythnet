@@ -33,11 +33,9 @@
 //! It offers a high-level API that signs transactions
 //! on behalf of the caller, and a low-level API for when they have
 //! already been signed and verified.
-use serde::Serialize;
 #[allow(deprecated)]
 use solana_sdk::recent_blockhashes_account;
 pub use solana_sdk::reward_type::RewardType;
-use std::iter::zip;
 use {
     crate::{
         account_overrides::AccountOverrides,
@@ -87,6 +85,7 @@ use {
         iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
         ThreadPool, ThreadPoolBuilder,
     },
+    serde::Serialize,
     solana_measure::{measure, measure::Measure, measure_us},
     solana_metrics::{inc_new_counter_debug, inc_new_counter_info},
     solana_perf::perf_libs,
@@ -109,7 +108,6 @@ use {
             AccountSharedData, InheritableAccountFields, ReadableAccount, WritableAccount,
         },
         account_utils::StateMut,
-        accumulator::{load, Accumulator, DummyPriceProof, PriceAccount, PriceProof, PriceProofs},
         bpf_loader_upgradeable::{self, UpgradeableLoaderState},
         clock::{
             BankId, Epoch, Slot, SlotCount, SlotIndex, UnixTimestamp, DEFAULT_HASHES_PER_TICK,
@@ -141,7 +139,6 @@ use {
         nonce_account,
         packet::PACKET_DATA_SIZE,
         precompiles::get_precompiles,
-        price_proof,
         pubkey::Pubkey,
         saturating_add_assign, secp256k1_program,
         signature::{Keypair, Signature},
@@ -168,7 +165,9 @@ use {
         cell::RefCell,
         collections::{HashMap, HashSet},
         convert::{TryFrom, TryInto},
-        fmt, mem,
+        fmt,
+        iter::zip,
+        mem,
         ops::{Deref, RangeInclusive},
         path::PathBuf,
         rc::Rc,
@@ -328,7 +327,6 @@ pub struct BankRc {
 
 #[cfg(RUSTC_WITH_SPECIALIZATION)]
 use solana_frozen_abi::abi_example::AbiExample;
-use solana_sdk::accumulator::{AccumulatorAttestation, MessageData};
 
 #[cfg(RUSTC_WITH_SPECIALIZATION)]
 impl AbiExample for BankRc {
@@ -2326,6 +2324,9 @@ impl Bank {
     }
 
     fn update_accumulator(&self) {
+        use solana_pyth::pyth::load;
+        use solana_pyth::pyth::PriceAccount;
+
         //TODO: ring buffer logic
         let clock = self.clock();
         let ring_buffer_idx = clock.slot % 10_000;
@@ -2348,69 +2349,36 @@ impl Bank {
         );
 
         self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
-            // TODO:
-            // 1. create proof PDAs
-            // 2. pass in proof PDAs into accumulator
-            //
-            // let mut accumulator = account
-            //     .as_ref()
-            //     .map(|account| from_account::<Accumulator, _>(account).unwrap())
-            //     .unwrap_or_default();
-            // get price feeds
-            // self.get_price_feeds()
-
-            // 1inch/USD pythnet price account
-            // let acct_1 = self
-            //     .get_account_with_fixed_root(
-            //         &Pubkey::from_str("7jAVut34sgRj6erznsYvLYvjc9GJwXTpN88ThZSDJ65G").unwrap(),
-            //     )
-            //     .unwrap();
-            // // APPL/USD pythnet price account
-            // let acct_2 = self
-            //     .get_account_with_fixed_root(
-            //         &Pubkey::from_str("5yixRcKtcs5BZ1K2FsLFwmES1MyA92d6efvijjVevQCw").unwrap(),
-            //     )
-            //     .unwrap();
             let price_feed_ids = self.get_price_feeds();
-            let price_feeds_accts_1: Vec<AccountSharedData> = price_feed_ids
+
+            let price_feed_accts: Vec<AccountSharedData> = price_feed_ids
                 .iter()
-                .map(|pf| self.get_account_with_fixed_root(pf).unwrap())
+                .map(|pf| {
+                    self.get_account_with_fixed_root(&Pubkey::from(*pf))
+                        .unwrap()
+                })
                 .collect();
-            let price_feeds_accts: Vec<&PriceAccount> = price_feeds_accts_1
+
+            let price_feed_accts: Vec<&PriceAccount> = price_feed_accts
                 .iter()
                 .map(|ai| load::<PriceAccount>(ai.data()))
                 .collect();
-            // let price_feeds = vec![
-            //     load::<PriceAccount>(acct_1.data()),
-            //     load::<PriceAccount>(acct_2.data()),
-            // ];
-            // info!("price_feeds: {:?}", &price_feeds);
-            let (acc, proofs) = Accumulator::new(
-                // &price_feeds
-                &price_feeds_accts,
-            );
-            // assert_eq!(price_feeds.len(), proofs.len());
-            // accumulator.add(self.slot());
-            info!("acc: {:?}", &acc);
-            let zipped: Vec<PriceProof> = zip(
-                //TODO: this price_feeds should be the pubkeys for the price accounts
+
+            let (acc, proof) = solana_pyth::accumulators::merkle::Accumulator::new(zip(
                 price_feed_ids,
-                proofs,
-            )
-            .map(|(pk, proof)| (pk, proof))
-            .collect();
-            let price_proofs = PriceProofs::new(zipped.as_ref());
-            info!("price_proof_pda - pubkey: {proof_pda:?} data: {price_proofs:?}");
-            let new_proof_account = AccountSharedData::from(price_proof::create_account2(
-                // &proofs,
-                // vec<PriceProof>
-                &price_proofs,
-                self.get_minimum_balance_for_rent_exemption(
-                    bincode::serialized_size(&price_proofs).unwrap() as usize,
-                ),
-                &wormhole_pubkey,
+                price_feed_accts,
             ));
-            self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
+
+            // let new_proof_account = AccountSharedData::from(price_proof::create_account2(
+            //     // &proofs,
+            //     // vec<PriceProof>
+            //     &price_proofs,
+            //     self.get_minimum_balance_for_rent_exemption(
+            //         bincode::serialized_size(&price_proofs).unwrap() as usize,
+            //     ),
+            //     &wormhole_pubkey,
+            // ));
+            // self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
 
             create_account::<sysvar::accumulator::Accumulator>(
                 &acc,
@@ -2459,45 +2427,39 @@ impl Bank {
         // (as opposed to an incrementing count that has to get modded)
         //
         // Store generated VAA for Wormhole to relay.
-        let (accumulator_vaa_pda, _) = Pubkey::find_program_address(
-            &[b"Accumulator", &clock.slot.to_be_bytes()],
-            &wormhole_pubkey,
-        );
+        let (accumulator_message_pda, _) =
+            Pubkey::find_program_address(&[b"AccumulatorMessage"], &wormhole_pubkey);
 
-        let msg_data = MessageData {
-            vaa_version: 1,
-            consistency_level: 1,
-            vaa_time: 1u32,
-            vaa_signature_account: Pubkey::default(),
-            submission_time: 1u32,
-            nonce: 0,
-            sequence: clock.slot,
-            emitter_chain: 26,
-            emitter_address: Pubkey::default().to_bytes(),
-            payload: AccumulatorAttestation {
-                accumulator: self.accumulator(),
-                ring_buffer_idx,
-                height: clock.slot,
-                timestamp: clock.unix_timestamp,
-            }
-            .serialize()
-            .unwrap(),
-        };
+        // let msg_data = MessageData {
+        //     vaa_version: 1,
+        //     consistency_level: 1,
+        //     vaa_time: 1u32,
+        //     vaa_signature_account: Pubkey::default(),
+        //     submission_time: 1u32,
+        //     nonce: 0,
+        //     sequence: clock.slot,
+        //     emitter_chain: 26,
+        //     emitter_address: Pubkey::default().to_bytes(),
+        //     payload: AccumulatorAttestation {
+        //         accumulator: self.accumulator(),
+        //         ring_buffer_idx,
+        //         height: clock.slot,
+        //         timestamp: clock.unix_timestamp,
+        //     }
+        //     .serialize()
+        //     .unwrap(),
+        // };
 
-        // let accumulator_account = AccountSharedData::from()
-
-        //     get_account(ACCUMULATOR_VAA).write(Vaa {
-        //         payload: serialize(Attest {
-        //             accumulator,
-        //             ring_buffer_idx,
-        //             height,
-        //             timestamp: now(),
-        //         })
-        //     });
-        // }
+        // Get Message size after serializing with Borsh.
+        //let message_data = borsh::BorshSerialize::try_to_vec(&msg_data).unwrap();
+        //let message_balance = self.get_minimum_balance_for_rent_exemption(message_data.len());
+        //let mut message_account =
+        //    AccountSharedData::new(message_balance, message_data.len(), &wormhole_pubkey);
+        //message_account.set_data(message_data);
+        //self.store_account_and_update_capitalization(&accumulator_message_pda, &message_account);
     }
 
-    fn get_price_feeds(&self) -> Vec<Pubkey> {
+    fn get_price_feeds(&self) -> Vec<[u8; 32]> {
         // cache price feed keys, and last mapping account + number
         // TODO:
         //      1. double check if mapping accounts can be inserted/deleted in the middle
@@ -2507,9 +2469,13 @@ impl Bank {
         //              empty space
         vec![
             // 1inch/usd
-            Pubkey::from_str("7jAVut34sgRj6erznsYvLYvjc9GJwXTpN88ThZSDJ65G").unwrap(),
+            Pubkey::from_str("7jAVut34sgRj6erznsYvLYvjc9GJwXTpN88ThZSDJ65G")
+                .unwrap()
+                .to_bytes(),
             // APPL/USD pythnet price account
-            Pubkey::from_str("5yixRcKtcs5BZ1K2FsLFwmES1MyA92d6efvijjVevQCw").unwrap(),
+            Pubkey::from_str("5yixRcKtcs5BZ1K2FsLFwmES1MyA92d6efvijjVevQCw")
+                .unwrap()
+                .to_bytes(),
         ]
     }
 
