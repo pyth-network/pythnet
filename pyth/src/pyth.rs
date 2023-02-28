@@ -53,6 +53,21 @@ unsafe impl Pod for MappingAccount {}
 unsafe impl Zeroable for MappingAccount {}
 
 #[repr(C)]
+#[derive(Copy, Clone, Pod, Zeroable)]
+pub struct ProductAccount {
+    pub header: AccountHeader,
+    pub first_price_account: RawPubkey,
+}
+pub const PC_ACCTYPE_PRODUCT: u32 = 2;
+pub const PC_PROD_ACC_SIZE: u32 = 512;
+
+impl PythAccount for ProductAccount {
+    const ACCOUNT_TYPE: u32 = PC_ACCTYPE_PRODUCT;
+    const INITIAL_SIZE: u32 = size_of::<ProductAccount>() as u32;
+    const MINIMUM_SIZE: usize = PC_PROD_ACC_SIZE as usize;
+}
+
+#[repr(C)]
 // #[derive(Copy, Clone, Pod, Zeroable)]
 #[cfg_attr(not(test), derive(Copy, Clone, Pod, Zeroable))]
 #[cfg_attr(test, derive(Copy, Clone, Pod, Zeroable, Default))]
@@ -222,6 +237,11 @@ pub trait PythAccount: Pod {
 /// - `data` is not aligned for T
 pub fn load<T: Pod>(data: &[u8]) -> &T {
     try_from_bytes(data.get(0..size_of::<T>()).unwrap()).unwrap()
+}
+
+pub fn load_as_option<T: Pod>(data: &[u8]) -> Option<&T> {
+    data.get(0..size_of::<T>())
+        .map(|data| try_from_bytes(data).unwrap())
 }
 
 /// Precedes every message implementing the p2w serialization format
