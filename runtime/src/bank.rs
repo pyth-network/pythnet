@@ -2541,7 +2541,7 @@ impl Bank {
     fn get_price_feeds(&self) -> Vec<Pubkey> {
         use solana_pyth::accumulators::Accumulator;
         use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs};
-        use solana_pyth::pyth::load;
+        use solana_pyth::pyth::{load, load_as_option};
         use solana_pyth::pyth::{MappingAccount, PriceAccount, ProductAccount};
         use solana_pyth::wormhole::AccumulatorSequenceTracker;
         use solana_sdk::borsh as solana_borsh;
@@ -2550,29 +2550,30 @@ impl Bank {
             wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
             PYTH_PID,
         };
-        let root_mapping_account_key =
+
+        // Root devnet mapping account
+        let mut cur_mapping_account_key =
             Pubkey::from_str("BmA9Z6FjioHJPpjT39QazZyhDRUdZy2ezwx4GiDdE2u2").unwrap();
-        let mut cur_mapping_account_key = root_mapping_account_key;
         let mut price_account_keys = vec![];
         let mut current_mapping_account_info =
             self.get_account_with_fixed_root(&cur_mapping_account_key);
         while let Some(mapping_account) = current_mapping_account_info {
-            let cur_mapping_account = solana_pyth::pyth::load::<solana_pyth::pyth::MappingAccount>(
-                mapping_account.data(),
-            );
+            let cur_mapping_account =
+                load::<solana_pyth::pyth::MappingAccount>(mapping_account.data());
             for p in cur_mapping_account.products_list.into_iter() {
                 if p == Pubkey::default().to_bytes() {
                     continue;
                 }
                 // info!("product_account: {:?}", Pubkey::from(p));
 
-                if let Some(product_account_data) =
+                if let Some(product_account_info) =
                     self.get_account_with_fixed_root(&Pubkey::from(p))
                 {
-                    let price_account_key = solana_pyth::pyth::load_as_option::<
-                        solana_pyth::pyth::ProductAccount,
-                    >(product_account_data.data())
+                    let price_account_key = load_as_option::<ProductAccount>(
+                        product_account_info.data(),
+                    )
                     .map(|product_account| Pubkey::from(product_account.first_price_account));
+
                     if let Some(price_account_key) = price_account_key {
                         price_account_keys.push(price_account_key);
                     }
@@ -2588,17 +2589,6 @@ impl Bank {
         }
 
         price_account_keys
-
-        // vec![
-        //     // 1inch/usd
-        //     Pubkey::from_str("7jAVut34sgRj6erznsYvLYvjc9GJwXTpN88ThZSDJ65G")
-        //         .unwrap()
-        //         .to_bytes(),
-        //     // APPL/USD pythnet price account
-        //     Pubkey::from_str("5yixRcKtcs5BZ1K2FsLFwmES1MyA92d6efvijjVevQCw")
-        //         .unwrap()
-        //         .to_bytes(),
-        // ]
     }
 
     pub fn epoch_duration_in_years(&self, prev_epoch: Epoch) -> f64 {
