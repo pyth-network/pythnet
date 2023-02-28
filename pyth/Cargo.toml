@@ -9,11 +9,15 @@ edition = "2021"
 [dependencies]
 borsh              = "*"
 bincode            = "*"
-bytemuck           = "*"
+bytemuck           = { version = "*", features = ["derive"] }
 fast-math          = "*"
-hex                = "*"
+hex                = { version = "*", features = ["serde"] }
 serde              = { version = "*", features = ["derive"] }
 sha3               = "*"
+
+
+[dev-dependencies]
+rand               = "*"
 
 [lib]
 crate-type = ["lib"]

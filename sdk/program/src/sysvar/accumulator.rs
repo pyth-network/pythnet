@@ -49,11 +49,11 @@ use crate::sysvar::Sysvar;
 pub use crate::{
     account_info::AccountInfo, program_error::ProgramError, slot_history::SlotHistory,
 };
-pub use solana_pyth::accumulators::merkle::Accumulator;
+pub use solana_pyth::accumulators::merkle::MerkleTree;
 
-crate::declare_sysvar_id!("SysvarAccumu1ator11111111111111111111111111", Accumulator);
+crate::declare_sysvar_id!("SysvarAccumu1ator11111111111111111111111111", MerkleTree);
 
-impl Sysvar for Accumulator {
+impl Sysvar for MerkleTree {
     //TODO: is this needed? do we ever need to use the accumulator sysvar in a contract?
     // impl_sysvar_get!(sol_get_accumulator_sysvar);
 

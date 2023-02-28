@@ -9,7 +9,7 @@
 
 use std::ops::Deref;
 use {
-    accumulators::merkle::Accumulator,
+    accumulators::merkle::MerkleTree,
     borsh::{BorshDeserialize, BorshSerialize},
     hex::FromHexError,
     pyth::{
@@ -26,10 +26,11 @@ use {
 
 pub mod accumulators;
 pub mod pyth;
+pub mod wormhole;
 
-pub(crate) type Pubkey = [u8; 32];
+pub(crate) type RawPubkey = [u8; 32];
 pub(crate) type Hash = [u8; 32];
-pub(crate) type PriceId = Pubkey;
+pub(crate) type PriceId = RawPubkey;
 
 // TODO:
 //  1. decide what will be pulled out into a "pythnet" crate and what needs to remain in here
@@ -39,15 +40,22 @@ pub(crate) type PriceId = Pubkey;
 /*** Dummy Field(s) for now just to test updating the sysvar ***/
 pub type Slot = u64;
 
-// TODO: this needs to store all relevant information that will go into the
-// proof - everything but the unused fields
+// TODO:
+//  1. this needs to store all relevant information that will go into the
+//  proof - everything but the unused fields
+//  2. this should eventually be generic
 // #[repr(transparent)]
 // pub struct AccumulatorPrice(u32);
 // TODO: check if this is correct repr
-// might need to use #[repr(align(x))]
+//  might need to use #[repr(align(x))]
+//  -> see pyth-client/program/rust/tests/test_utils.rs AccountSetup
 #[repr(C)]
 pub struct AccumulatorPrice {
     pub price_type: u32,
+}
+
+pub struct AccumulatorValue<V: std::hash::Hash> {
+    pub value: V,
 }
 
 /**
@@ -134,8 +142,11 @@ impl AsRef<[u8]> for AccumulatorPrice {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AccumulatorAttestation {
-    pub accumulator: Accumulator,
+pub struct AccumulatorAttestation<P: serde::Serialize> {
+    // pub accumulator_root: P,
+    // pub accumulator: MerkleTree,
+    pub accumulator: P,
+
     #[serde(serialize_with = "use_to_string")]
     pub ring_buffer_idx: u64,
     #[serde(serialize_with = "use_to_string")]
@@ -147,17 +158,7 @@ pub struct AccumulatorAttestation {
 pub type ErrBox = Box<dyn std::error::Error>;
 
 // from pyth-crosschain/wormhole_attester/sdk/rust/src/lib.rs
-impl AccumulatorAttestation {
-    /**
-    let acc_vaa_payload = accumulatorAttestation.serialize().map_err(|e| {
-        trace!(&e.to_string());
-        ProgramError::InvalidAccountData
-    })?;
-    MessageData {
-        //..
-        payload: acc_vaa_payload,
-    }
-    */
+impl<P: serde::Serialize + for<'a> serde::Deserialize<'a>> AccumulatorAttestation<P> {
     pub fn serialize(&self) -> Result<Vec<u8>, ErrBox> {
         // magic
         let mut buf = PACC2W_MAGIC.to_vec();
@@ -186,16 +187,21 @@ impl AccumulatorAttestation {
         // buf.extend_from_slice(&(self.accumulator.merkle_tree.leaf_count as u16).to_be_bytes()[..]);
 
         let AccumulatorAttestation {
+            // accumulator_root: accumulator_root,
             accumulator,
             ring_buffer_idx,
             height,
             timestamp,
         } = self;
+
         // let mut accumulator_buf = Vec::with_capacity(accumulator.merkle_tree.leaf_count);
         //TODO: decide on pyth-accumulator-over-wormhole serialization format.
+
         let mut serialized_acc = bincode::serialize(&accumulator).unwrap();
 
+        // TODO: always 32?
         buf.extend_from_slice(&(serialized_acc.len() as u16).to_be_bytes()[..]);
+
         buf.append(&mut serialized_acc);
         buf.extend_from_slice(&ring_buffer_idx.to_be_bytes()[..]);
         buf.extend_from_slice(&height.to_be_bytes()[..]);
@@ -264,6 +270,19 @@ impl AccumulatorAttestation {
         }
 
         // Header consumed, continue with remaining fields
+        // let mut accum_len_vec = vec![0u8; mem::size_of::<u16>()];
+        // bytes.read_exact(accum_len_vec.as_mut_slice())?;
+        // let accum_len = u16::from_be_bytes(accum_len_vec.as_slice().try_into()?);
+        //
+        // // let accum_vec = Vec::with_capacity(accum_len_vec as usize);
+        // let mut accum_vec = vec![0u8; accum_len as usize];
+        // bytes.read_exact(accum_vec.as_mut_slice())?;
+        // let accumulator =
+        //     match <MerkleTree as BorshDeserialize>::deserialize(&mut accum_vec.as_slice()) {
+        //         Ok(acc) => acc,
+        //         Err(e) => return Err(format!("AccumulatorDeserialization failed: {}", e).into()),
+        //     };
+
         let mut accum_len_vec = vec![0u8; mem::size_of::<u16>()];
         bytes.read_exact(accum_len_vec.as_mut_slice())?;
         let accum_len = u16::from_be_bytes(accum_len_vec.as_slice().try_into()?);
@@ -367,214 +386,223 @@ impl AsRef<[u8]> for Identifier {
     }
 }
 
-#[repr(transparent)]
-#[derive(Default)]
-pub struct PostedMessageUnreliableData {
-    pub message: MessageData,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::accumulators::Accumulator;
+    // use crate::accumulator::PayloadId::AccumulationAttestation;
+    use crate::pyth::*;
 
-#[derive(Debug, Default, BorshSerialize, BorshDeserialize, Clone, Serialize, Deserialize)]
-pub struct MessageData {
-    /// Header of the posted VAA
-    pub vaa_version: u8,
-
-    /// Level of consistency requested by the emitter
-    pub consistency_level: u8,
-
-    /// Time the vaa was submitted
-    pub vaa_time: u32,
-
-    /// Account where signatures are stored
-    pub vaa_signature_account: Pubkey,
-
-    /// Time the posted message was created
-    pub submission_time: u32,
-
-    /// Unique nonce for this message
-    pub nonce: u32,
-
-    /// Sequence number of this message
-    pub sequence: u64,
-
-    /// Emitter of the message
-    pub emitter_chain: u16,
-
-    /// Emitter of the message
-    pub emitter_address: [u8; 32],
-
-    /// Message payload
-    pub payload: Vec<u8>,
-}
-
-impl BorshSerialize for PostedMessageUnreliableData {
-    fn serialize<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        writer.write_all(b"msu")?;
-        BorshSerialize::serialize(&self.message, writer)
+    pub fn new_unique_pubkey() -> RawPubkey {
+        use rand::Rng;
+        rand::thread_rng().gen::<[u8; 32]>()
     }
-}
 
-impl BorshDeserialize for PostedMessageUnreliableData {
-    fn deserialize(buf: &mut &[u8]) -> std::io::Result<Self> {
-        if buf.len() < 3 {
-            return Err(Error::new(InvalidData, "Not enough bytes"));
+    impl Default for pyth::AccountHeader {
+        fn default() -> Self {
+            Self {
+                magic_number: crate::pyth::PC_MAGIC,
+                version: 0,
+                account_type: crate::pyth::PC_ACCTYPE_PRICE,
+                size: 0,
+            }
         }
+    }
 
-        let expected = b"msu";
-        let magic: &[u8] = &buf[0..3];
-        if magic != expected {
-            return Err(Error::new(
-                InvalidData,
-                format!(
-                    "Magic mismatch. Expected {:?} but got {:?}",
-                    expected, magic
-                ),
-            ));
+    // TODO: - keep current cfg_attr or implement it all here?
+    // impl Default for crate::pyth::PriceInfo {
+    //     fn default() -> Self {
+    //         Self {
+    //            todo!()
+    //         }
+    //     }
+    // }
+    // impl Default for crate::pyth::PriceEma {
+    //     fn default() -> Self {
+    //         Self {
+    //            todo!()
+    //         }
+    //     }
+    // }
+    // impl Default for crate::pyth::PriceComponent {
+    //     fn default() -> Self {
+    //         Self {
+    //            todo!()
+    //          }
+    //     }
+    // }
+    //
+    // impl Default for crate::pyth::PriceAccount {
+    //     fn default() -> Self {
+    //         Self {
+    //             ..Default::default()
+    //         }
+    //     }
+    // }
+    //
+
+    impl AccountHeader {
+        fn new(account_type: u32) -> Self {
+            Self {
+                account_type,
+                ..AccountHeader::default()
+            }
+        }
+    }
+
+    // only using the price_type field for hashing for merkle tree.
+    fn generate_price_account(price_type: u32) -> (RawPubkey, PriceAccount) {
+        (
+            new_unique_pubkey(),
+            PriceAccount {
+                price_type,
+                header: AccountHeader::new(PC_ACCTYPE_PRICE),
+                ..PriceAccount::default()
+            },
+        )
+    }
+
+    #[test]
+    fn test_pa_default() {
+        println!("testing pa");
+        let acct_header = AccountHeader::default();
+        println!("acct_header.acct_type: {}", acct_header.account_type);
+        let pa = PriceAccount::default();
+        println!("price_account.price_type: {}", pa.price_type);
+    }
+
+    #[test]
+    fn test_new_accumulator() {
+        let price_accts_and_keys = (0..2)
+            .map(|i| generate_price_account(i))
+            .collect::<Vec<_>>();
+        let t = price_accts_and_keys
+            .iter()
+            .map(|(pk, pa)| (*pk, pa))
+            .into_iter();
+        let acc = MerkleTree::new_merkle(t);
+        println!("acc: {acc:#?}\nproofs:{:?}", acc.proof())
+    }
+
+    #[test]
+    fn test_accumulator_attest_serde() -> Result<(), ErrBox> {
+        // let price_accts_and_keys: Vec<(Pubkey, PriceAccount)> =
+        //     (0..2).map(|i| generate_price_account(i)).collect();
+        // let price_accts: Vec<&PriceAccount> =
+        //     price_accts_and_keys.iter().map(|(_, pa)| pa).collect();
+        let price_accts_and_keys = (0..2)
+            .map(|i| generate_price_account(i))
+            .collect::<Vec<_>>();
+        let accum_input = price_accts_and_keys
+            .iter()
+            .map(|(pk, pa)| (*pk, pa))
+            .into_iter();
+        // let (accumulator, proofs) = MerkleTree::new_merkle(accum_input);
+        let accumulator = MerkleTree::new_merkle(accum_input);
+
+        // arbitrary values
+        let ring_buffer_idx = 17;
+        let height = 28;
+        let timestamp = 294;
+
+        let accumulator_attest = AccumulatorAttestation {
+            accumulator: accumulator.root,
+            ring_buffer_idx,
+            height,
+            timestamp,
         };
-        *buf = &buf[3..];
-        Ok(PostedMessageUnreliableData {
-            message: <MessageData as BorshDeserialize>::deserialize(buf)?,
-        })
+
+        println!("accumulator attest hex struct:  {accumulator_attest:#02X?}");
+
+        let serialized = accumulator_attest.serialize()?;
+        println!("accumulator attest hex bytes: {serialized:02X?}");
+
+        let deserialized = AccumulatorAttestation::deserialize(serialized.as_slice())?;
+
+        println!("deserialized accumulator attest hex struct:  {deserialized:#02X?}");
+        assert_eq!(accumulator_attest, deserialized);
+        Ok(())
+    }
+
+    #[test]
+    fn test_wormhole_unreliable_message_serialize() {
+        let price_accts_and_keys = (0..2)
+            .map(|i| generate_price_account(i))
+            .collect::<Vec<_>>();
+        let accum_input = price_accts_and_keys
+            .iter()
+            .map(|(pk, pa)| (*pk, pa))
+            .into_iter();
+        // let (accumulator, proofs) = MerkleTree::new_merkle(accum_input);
+
+        // let (accumulator, proofs) = MerkleTree::new_merkle(accum_input);
+        let accumulator = MerkleTree::new_merkle(accum_input);
+        // arbitrary values
+        let ring_buffer_idx = 17;
+        let height = 28;
+        let timestamp = 294;
+
+        let accumulator_attestation = AccumulatorAttestation {
+            accumulator: accumulator.root,
+            ring_buffer_idx,
+            height,
+            timestamp,
+        };
+
+        let msg_data = crate::wormhole::PostedMessageUnreliableData {
+            message: crate::wormhole::MessageData {
+                vaa_version: 1,
+                consistency_level: 1,
+                vaa_time: 1u32,
+                vaa_signature_account: new_unique_pubkey(),
+                submission_time: 1u32,
+                nonce: 0,
+                //TODO: handle this
+                sequence: 500,
+                emitter_chain: 26,
+                //TODO: handle this
+                emitter_address: new_unique_pubkey(),
+                payload: accumulator_attestation.serialize().unwrap(),
+            },
+        };
+
+        let mut account_data = vec![];
+        msg_data.serialize(&mut account_data).unwrap();
+        println!("account_data: {account_data:02X?}");
+
+        let deserialized =
+            crate::wormhole::PostedMessageUnreliableData::deserialize(&mut account_data.as_slice())
+                .unwrap();
+
+        assert_eq!(
+            msg_data.message.vaa_signature_account,
+            deserialized.message.vaa_signature_account
+        );
+        assert_eq!(
+            msg_data.message.emitter_chain,
+            deserialized.message.emitter_chain
+        );
+        assert_eq!(
+            msg_data.message.emitter_address,
+            deserialized.message.emitter_address
+        );
+        let original_accumulator_root = accumulator.root;
+        let msg_data_accum: AccumulatorAttestation<Hash> =
+            AccumulatorAttestation::deserialize(&mut msg_data.message.payload.as_slice()).unwrap();
+        let deserialized_msg_data_accum: AccumulatorAttestation<Hash> =
+            AccumulatorAttestation::deserialize(&mut deserialized.message.payload.as_slice())
+                .unwrap();
+        println!(
+            r"
+                original_accumulator_root: {:?}, 
+                msg_data_accum.accumulator: {:?},
+                deserialized_msg_data_accum.accumulator: {:?}
+            ",
+            original_accumulator_root,
+            msg_data_accum.accumulator,
+            deserialized_msg_data_accum.accumulator
+        );
+        assert_eq!(original_accumulator_root, msg_data_accum.accumulator);
+        assert_eq!(msg_data_accum, deserialized_msg_data_accum);
     }
 }
-
-impl Deref for PostedMessageUnreliableData {
-    type Target = MessageData;
-
-    fn deref(&self) -> &Self::Target {
-        &self.message
-    }
-}
-
-impl DerefMut for PostedMessageUnreliableData {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.message
-    }
-}
-
-impl Clone for PostedMessageUnreliableData {
-    fn clone(&self) -> Self {
-        PostedMessageUnreliableData {
-            message: self.message.clone(),
-        }
-    }
-}
-
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use crate::accumulator::PayloadId::AccumulationAttestation;
-//
-//     impl Default for pyth::AccountHeader {
-//         fn default() -> Self {
-//             Self {
-//                 magic_number: PC_MAGIC,
-//                 version: 0,
-//                 account_type: PC_ACCTYPE_PRICE,
-//                 size: 0,
-//             }
-//         }
-//     }
-//
-//     // TODO: - keep current cfg_attr or implement it all here?
-//     // impl Default for PriceInfo {
-//     //     fn default() -> Self {
-//     //         Self {
-//     //            todo!()
-//     //         }
-//     //     }
-//     // }
-//     // impl Default for PriceEma {
-//     //     fn default() -> Self {
-//     //         Self {
-//     //            todo!()
-//     //         }
-//     //     }
-//     // }
-//     // impl Default for PriceComponent {
-//     //     fn default() -> Self {
-//     //         Self {
-//     //            todo!()
-//     //          }
-//     //     }
-//     // }
-//     //
-//     // impl Default for PriceAccount {
-//     //     fn default() -> Self {
-//     //         Self {
-//     //             ..Default::default()
-//     //         }
-//     //     }
-//     // }
-//
-//     impl AccountHeader {
-//         fn new(account_type: u32) -> Self {
-//             Self {
-//                 account_type,
-//                 ..AccountHeader::default()
-//             }
-//         }
-//     }
-//
-//     // only using the price_type field for hashing for merkle tree.
-//     fn generate_price_account(price_type: u32) -> (Pubkey, PriceAccount) {
-//         (
-//             Pubkey::new_unique(),
-//             PriceAccount {
-//                 price_type,
-//                 header: AccountHeader::new(PC_ACCTYPE_PRICE),
-//                 ..PriceAccount::default()
-//             },
-//         )
-//     }
-//
-//     #[test]
-//     fn test_pa_default() {
-//         println!("testing pa");
-//         let acct_header = AccountHeader::default();
-//         println!("acct_header.acct_type: {}", acct_header.account_type);
-//         let pa = PriceAccount::default();
-//         println!("price_account.price_type: {}", pa.price_type);
-//     }
-//
-//     #[test]
-//     fn test_new_accumulator() {
-//         let price_accts_and_keys: Vec<(Pubkey, PriceAccount)> =
-//             (0..2).map(|i| generate_price_account(i)).collect();
-//         let price_accts: Vec<&PriceAccount> =
-//             price_accts_and_keys.iter().map(|(_, pa)| pa).collect();
-//         let (acc, proofs) = Accumulator::new(&price_accts);
-//         println!("acc: {acc:#?}\nproofs:{proofs:#?}")
-//     }
-//
-//     #[test]
-//     fn test_accumulator_attest_serde() -> Result<(), ErrBox> {
-//         let price_accts_and_keys: Vec<(Pubkey, PriceAccount)> =
-//             (0..2).map(|i| generate_price_account(i)).collect();
-//         let price_accts: Vec<&PriceAccount> =
-//             price_accts_and_keys.iter().map(|(_, pa)| pa).collect();
-//         let (accumulator, proofs) = Accumulator::new(&price_accts);
-//
-//         // arbitrary values
-//         let ring_buffer_idx = 17;
-//         let height = 28;
-//         let timestamp = 294;
-//
-//         let accumulator_attest = AccumulatorAttestation {
-//             accumulator,
-//             ring_buffer_idx,
-//             height,
-//             timestamp,
-//         };
-//
-//         println!("accumulator attest hex struct:  {accumulator_attest:#02X?}");
-//
-//         let serialized = accumulator_attest.serialize()?;
-//         println!("accumulator attest hex bytes: {serialized:02X?}");
-//
-//         let deserialized = AccumulatorAttestation::deserialize(serialized.as_slice())?;
-//
-//         println!("deserialized accumulator attest hex struct:  {deserialized:#02X?}");
-//         assert_eq!(accumulator_attest, deserialized);
-//         Ok(())
-//     }
-// }
