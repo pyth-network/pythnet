@@ -2375,13 +2375,10 @@ impl Bank {
 
         self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
             let price_feed_ids = self.get_price_feeds();
-
+            // info!("price_feed_ids: {:?}", price_feed_ids.first());
             let price_feed_accts: Vec<AccountSharedData> = price_feed_ids
                 .iter()
-                .map(|pf| {
-                    self.get_account_with_fixed_root(&Pubkey::from(*pf))
-                        .unwrap()
-                })
+                .map(|pf| self.get_account_with_fixed_root(pf).unwrap())
                 .collect();
 
             let price_feed_accts = price_feed_accts
@@ -2395,7 +2392,7 @@ impl Bank {
             // ));
 
             let acc = solana_pyth::accumulators::merkle::MerkleTree::new_merkle(zip(
-                price_feed_ids,
+                price_feed_ids.into_iter().map(|pf| pf.to_bytes()),
                 price_feed_accts,
             ));
             let price_proofs = PriceProofs::new(&acc.proof());
@@ -2417,41 +2414,21 @@ impl Bank {
             )
         });
 
-        // TODO: these are just dummy/filler values and PDA addresses for now
-
         info!("update_accumulator proof_pda: {}", proof_pda);
 
-        // self.store_account(&proof_pda, &new_proof_account);
-        // create proofs
-
-        // from self.compute_active_feature_set()
-        // if feature::to_account(&feature, &mut account).is_some() {
-        //     self.store_account(feature_id, &account);
-        // }
-        // When new sysvar comes into existence (with RENT_UNADJUSTED_INITIAL_BALANCE lamports),
-        // this code ensures that the sysvar's balance is adjusted to be rent-exempt.
-        //
-        // More generally, this code always re-calculates for possible sysvar data size change,
-        // although there is no such sysvars currently.
-        // [Ricky] - this just calculatles self.get_minimum_balance_for_rent_exemption for account and sets it
-        // self.adjust_sysvar_balance_for_rent(&mut new_account);
-        //
-        // self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
-
-        // create VAA
-        // TODO: any security concerns with the validators directly generating the VAAs
-        //      1. is it possible for a "rogue" validator to join the network
-        //      and started generating VAAs and what would happen?
-        //
-        // I think we should in general be versioning the proofs embedded in the VAA, so it could be part of the params for the proof
-        //
-        // we could also literally send the ring buffer index in the message
-        // (as opposed to an incrementing count that has to get modded)
-        //
         // Store generated VAA for Wormhole to relay.
         self.post_accumulator_attestation();
     }
 
+    // create VAA
+    // TODO: any security concerns with the validators directly generating the VAAs
+    //      1. is it possible for a "rogue" validator to join the network
+    //      and started generating VAAs and what would happen?
+    //
+    // I think we should in general be versioning the proofs embedded in the VAA, so it could be part of the params for the proof
+    //
+    // we could also literally send the ring buffer index in the message
+    // (as opposed to an incrementing count that has to get modded)
     fn post_accumulator_attestation(&self) {
         // use borsh::BorshDeserialize;
         // use borsh::de::BorshDeserialize;
@@ -2478,7 +2455,7 @@ impl Bank {
 
         let accumulator_attestation = solana_pyth::AccumulatorAttestation {
             // accumulator: self.accumulator().get_root().unwrap(),
-            accumulator: *(self.accumulator().get_root().unwrap()),
+            accumulator: self.accumulator().root,
             ring_buffer_idx,
             height: clock.slot,
             timestamp: clock.unix_timestamp,
@@ -2535,7 +2512,7 @@ impl Bank {
 
         info!("msg_data.message: {:?}", msg_data.message);
 
-        // TODO: optimization can be done here since get_instance_packed_len will serialize the data
+        // TODO: minor optimization can be done here since get_instance_packed_len will serialize the data
         //  and then we serialize it again in create_wormhole_msg_account
         let message_data_len = solana_borsh::get_instance_packed_len(&msg_data).unwrap();
         let message_balance = self.get_minimum_balance_for_rent_exemption(message_data_len);
@@ -2548,30 +2525,80 @@ impl Bank {
         );
     }
 
-    fn get_price_feeds(&self) -> Vec<[u8; 32]> {
-        // cache price feed keys, and last mapping account + number
-        //
-        // - mapping account holds array of product accounts
-        // - product account holds first price account
-        //      - as of now there should only be one price account per product but this could change if
-        //        pyth supports different types of price accounts (very-likely)?
-        // TODO:
-        //      1. double check if mapping accounts can be inserted/deleted in the middle
-        //          - product accounts can be deleted from non-tail mapping accounts but they
-        //              cannot have any price accounts
-        //          - can construct multiple mapping accounts where non-tail accounts have
-        //              empty space
-        // TODO: implement a parallelized fetching of accounts
-        vec![
-            // 1inch/usd
-            Pubkey::from_str("7jAVut34sgRj6erznsYvLYvjc9GJwXTpN88ThZSDJ65G")
-                .unwrap()
-                .to_bytes(),
-            // APPL/USD pythnet price account
-            Pubkey::from_str("5yixRcKtcs5BZ1K2FsLFwmES1MyA92d6efvijjVevQCw")
-                .unwrap()
-                .to_bytes(),
-        ]
+    // cache price feed keys, and last mapping account + number
+    //
+    // - mapping account holds array of product accounts
+    // - product account holds first price account
+    //      - as of now there should only be one price account per product but this could change if
+    //        pyth supports different types of price accounts (very-likely)?
+    // TODO:
+    //      1. double check if mapping accounts can be inserted/deleted in the middle
+    //          - product accounts can be deleted from non-tail mapping accounts but they
+    //              cannot have any price accounts
+    //          - can construct multiple mapping accounts where non-tail accounts have
+    //              empty space
+    // TODO: implement a parallelized fetching of accounts
+    fn get_price_feeds(&self) -> Vec<Pubkey> {
+        use solana_pyth::accumulators::Accumulator;
+        use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs};
+        use solana_pyth::pyth::load;
+        use solana_pyth::pyth::{MappingAccount, PriceAccount, ProductAccount};
+        use solana_pyth::wormhole::AccumulatorSequenceTracker;
+        use solana_sdk::borsh as solana_borsh;
+        use solana_sdk::pyth::{
+            price_proofs::create_account as create_price_proof_account,
+            wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
+            PYTH_PID,
+        };
+        let root_mapping_account_key =
+            Pubkey::from_str("BmA9Z6FjioHJPpjT39QazZyhDRUdZy2ezwx4GiDdE2u2").unwrap();
+        let mut cur_mapping_account_key = root_mapping_account_key;
+        let mut price_account_keys = vec![];
+        let mut current_mapping_account_info =
+            self.get_account_with_fixed_root(&cur_mapping_account_key);
+        while let Some(mapping_account) = current_mapping_account_info {
+            let cur_mapping_account = solana_pyth::pyth::load::<solana_pyth::pyth::MappingAccount>(
+                mapping_account.data(),
+            );
+            for p in cur_mapping_account.products_list.into_iter() {
+                if p == Pubkey::default().to_bytes() {
+                    continue;
+                }
+                // info!("product_account: {:?}", Pubkey::from(p));
+
+                if let Some(product_account_data) =
+                    self.get_account_with_fixed_root(&Pubkey::from(p))
+                {
+                    let price_account_key = solana_pyth::pyth::load_as_option::<
+                        solana_pyth::pyth::ProductAccount,
+                    >(product_account_data.data())
+                    .map(|product_account| Pubkey::from(product_account.first_price_account));
+                    if let Some(price_account_key) = price_account_key {
+                        price_account_keys.push(price_account_key);
+                    }
+                }
+            }
+            cur_mapping_account_key = Pubkey::from(cur_mapping_account.next_mapping_account);
+            info!("next mapping account key: {cur_mapping_account_key:?}");
+            if cur_mapping_account_key == Pubkey::default() {
+                break;
+            }
+            current_mapping_account_info =
+                self.get_account_with_fixed_root(&cur_mapping_account_key);
+        }
+
+        price_account_keys
+
+        // vec![
+        //     // 1inch/usd
+        //     Pubkey::from_str("7jAVut34sgRj6erznsYvLYvjc9GJwXTpN88ThZSDJ65G")
+        //         .unwrap()
+        //         .to_bytes(),
+        //     // APPL/USD pythnet price account
+        //     Pubkey::from_str("5yixRcKtcs5BZ1K2FsLFwmES1MyA92d6efvijjVevQCw")
+        //         .unwrap()
+        //         .to_bytes(),
+        // ]
     }
 
     pub fn epoch_duration_in_years(&self, prev_epoch: Epoch) -> f64 {
