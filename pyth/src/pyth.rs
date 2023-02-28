@@ -1,5 +1,5 @@
 use {
-    crate::Pubkey,
+    crate::RawPubkey,
     borsh::{BorshDeserialize, BorshSerialize},
     serde::{Deserialize, Serialize, Serializer},
     std::{
@@ -34,8 +34,8 @@ pub struct MappingAccount {
     pub header: AccountHeader,
     pub number_of_products: u32,
     pub unused_: u32,
-    pub next_mapping_account: Pubkey,
-    pub products_list: [Pubkey; PC_MAP_TABLE_SIZE as usize],
+    pub next_mapping_account: RawPubkey,
+    pub products_list: [RawPubkey; PC_MAP_TABLE_SIZE as usize],
 }
 
 pub const PC_ACCTYPE_MAPPING: u32 = 1;
@@ -82,9 +82,9 @@ pub struct PriceAccount {
     pub unused_2_: i16,
     pub unused_3_: i32,
     /// Corresponding product account
-    pub product_account: Pubkey,
+    pub product_account: RawPubkey,
     /// Next price account in the list
-    pub next_price_account: Pubkey,
+    pub next_price_account: RawPubkey,
     /// Second to last slot where aggregation was succesful (i.e. status : TRADING)
     pub prev_slot_: u64,
     /// Aggregate price at prev_slot_
@@ -106,7 +106,7 @@ pub const PC_COMP_SIZE: u32 = 32;
 #[cfg_attr(not(test), derive(Copy, Clone, Pod, Zeroable))]
 #[cfg_attr(test, derive(Copy, Clone, Pod, Zeroable, Default))]
 pub struct PriceComponent {
-    pub pub_: Pubkey,
+    pub pub_: RawPubkey,
     pub agg_: PriceInfo,
     pub latest_: PriceInfo,
 }

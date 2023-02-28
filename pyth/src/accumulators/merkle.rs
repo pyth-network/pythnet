@@ -1,5 +1,6 @@
 // TODO: Go back to a reference based implementation ala Solana's original.
 
+use crate::accumulators::{Accumulator, AccumulatorId};
 use {
     crate::pyth::PriceAccount,
     crate::{AccumulatorPrice, Hash, PriceId},
@@ -34,19 +35,97 @@ macro_rules! hash_intermediate {
         hashv(&[INTERMEDIATE_PREFIX, $l.as_ref(), $r.as_ref()])
     }
 }
-
 /// An implementation of a Sha3/Keccak256 based Merkle Tree based on the implementation provided by
 /// solana-merkle-tree. This modifies the structure slightly to be serialization friendly, and to
 /// make verification cheaper on EVM based networks.
 #[derive(
     Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, Default,
 )]
-pub struct Accumulator {
+pub struct MerkleTree {
+    // pub leaf_count: usize,
+    // pub nodes_count: usize,
+    #[borsh_skip]
+    #[serde(skip)]
     pub leaf_count: usize,
+    #[borsh_skip]
+    #[serde(skip)]
     pub nodes: Vec<Hash>,
+    #[borsh_skip]
+    #[serde(skip)]
+    pub proofs: Vec<(PriceId, MerklePath)>,
+    pub root: Hash,
 }
 
-impl Accumulator {
+impl Accumulator for MerkleTree {
+    type Proof = Vec<(PriceId, MerklePath)>;
+
+    fn new<'r, I, V>(input: I) -> Self
+    where
+        I: Iterator<Item = (AccumulatorId, &'r V)> + Clone,
+        V: 'r + std::hash::Hash,
+    {
+        // let mut merkle = Self::from_slices(
+        //     input
+        //         .clone()
+        //         .map(|(_, p_a): (_, &'r V)| AccumulatorPrice {
+        //             price_type: p_a.price_type,
+        //         })
+        //         .collect::<Vec<AccumulatorPrice>>()
+        //         .as_slice(),
+        // );
+
+        // pub fn from_slices<T: AsRef<[u8]>>(items: &[T]) -> Self
+        //
+        let mut merkle = Self::from_slices(
+            input
+                .clone()
+                .map(|(_, p_a): (_, &'r V)| crate::AccumulatorPrice { price_type: 0u32 })
+                .collect::<Vec<AccumulatorPrice>>()
+                .as_slice(),
+        );
+
+        //TODO: plz handle failures & errors
+        merkle.proofs = input
+            .enumerate()
+            .map(|(idx, (id, _))| (id, merkle.find_path(idx).unwrap()))
+            .collect();
+
+        merkle.root = merkle.get_root().unwrap().clone();
+
+        merkle
+    }
+
+    // fn new<'r, I, V: 'r>(input: I) -> Self
+    // where
+    //     I: Iterator<Item = (AccumulatorId, &'r V)> + Clone,
+    // {
+    //     let mut merkle = Self::from_slices(
+    //         input
+    //             .clone()
+    //             .map(|(_, p_a): (_, &'r V)| AccumulatorPrice {
+    //                 price_type: p_a.price_type,
+    //             })
+    //             .collect::<Vec<AccumulatorPrice>>()
+    //             .as_slice(),
+    //     );
+    //
+    //     //TODO: plz handle failures & errors
+    //     merkle.proofs = input
+    //         .enumerate()
+    //         .map(|(idx, (id, _))| (id, merkle.find_path(idx).unwrap()))
+    //         .collect();
+    //
+    //     merkle.root = merkle.get_root().unwrap().clone();
+    //
+    //     merkle
+    // }
+
+    fn proof(&self) -> Self::Proof {
+        self.proofs.clone()
+    }
+}
+
+impl MerkleTree {
     #[inline]
     fn next_level_len(level_len: usize) -> usize {
         if level_len == 1 {
@@ -80,10 +159,12 @@ impl Accumulator {
     }
 
     pub fn from_slices<T: AsRef<[u8]>>(items: &[T]) -> Self {
-        let cap = Accumulator::calculate_vec_capacity(items.len());
-        let mut mt = Accumulator {
+        let cap = MerkleTree::calculate_vec_capacity(items.len());
+        let mut mt = MerkleTree {
             leaf_count: items.len(),
             nodes: Vec::with_capacity(cap),
+            proofs: Vec::new(),
+            root: Hash::default(),
         };
 
         for item in items {
@@ -92,7 +173,7 @@ impl Accumulator {
             mt.nodes.push(hash);
         }
 
-        let mut level_len = Accumulator::next_level_len(items.len());
+        let mut level_len = MerkleTree::next_level_len(items.len());
         let mut level_start = items.len();
         let mut prev_level_len = items.len();
         let mut prev_level_start = 0;
@@ -113,7 +194,7 @@ impl Accumulator {
             prev_level_start = level_start;
             prev_level_len = level_len;
             level_start += level_len;
-            level_len = Accumulator::next_level_len(level_len);
+            level_len = MerkleTree::next_level_len(level_len);
         }
 
         mt
@@ -124,11 +205,11 @@ impl Accumulator {
     }
 
     pub fn find_path(&self, index: usize) -> Option<MerklePath> {
-        if index >= self.leaf_count {
+        if index >= self.leaf_count as usize {
             return None;
         }
 
-        let mut level_len = self.leaf_count;
+        let mut level_len = self.leaf_count as usize;
         let mut level_start = 0;
         let mut path = MerklePath::default();
         let mut node_index = index;
@@ -155,16 +236,17 @@ impl Accumulator {
             node_index /= 2;
 
             level_start += level_len;
-            level_len = Accumulator::next_level_len(level_len);
+            level_len = MerkleTree::next_level_len(level_len);
         }
         Some(path)
     }
 
-    pub fn new<'r, I>(price_accounts: I) -> (Self, Vec<(PriceId, MerklePath)>)
+    // pub new<H: Hash>(price_account: Vec<H>)
+    pub fn new_merkle<'r, I>(price_accounts: I) -> Self
     where
         I: Iterator<Item = (PriceId, &'r PriceAccount)> + Clone,
     {
-        let merkle = Self::from_slices(
+        let mut merkle = Self::from_slices(
             price_accounts
                 .clone()
                 .map(|(_, p_a): (_, &'r PriceAccount)| AccumulatorPrice {
@@ -175,12 +257,13 @@ impl Accumulator {
         );
 
         //TODO: plz handle failures & errors
-        let proofs: Vec<(PriceId, MerklePath)> = price_accounts
+
+        merkle.proofs = price_accounts
             .enumerate()
             .map(|(idx, (id, _))| (id, merkle.find_path(idx).unwrap()))
             .collect();
-
-        (merkle, proofs)
+        merkle.root = merkle.get_root().unwrap().clone();
+        merkle
     }
 }
 
@@ -215,5 +298,29 @@ impl<'a> MerkleNode {
     pub fn new(target: Hash, left_sibling: Option<Hash>, right_sibling: Option<Hash>) -> Self {
         assert!(left_sibling.is_none() ^ right_sibling.is_none());
         Self(target, left_sibling, right_sibling)
+    }
+}
+
+//old
+//TODO: update this to correct value/type later
+// pub type PriceHash = Proof;
+// pub type PriceId = Pubkey;
+// pub type PriceProof = (PriceId, PriceHash);
+//
+// /** using `sdk/program/src/slot_hashes.rs` as a reference **/
+//
+
+//TODO: newtype or type alias?
+//  also double check alignment in conjunction with `AccumulatorPrice`
+// #[repr(transparent)]
+#[repr(C)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Default)]
+pub struct PriceProofs(Vec<(PriceId, MerklePath)>);
+
+impl PriceProofs {
+    pub fn new(price_proofs: &[(PriceId, MerklePath)]) -> Self {
+        let mut price_proofs = price_proofs.to_vec();
+        price_proofs.sort_by(|(a, _), (b, _)| a.cmp(b));
+        Self(price_proofs)
     }
 }
