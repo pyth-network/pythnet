@@ -1416,13 +1416,14 @@ impl Bank {
             }
             bank.update_stake_history(None);
         }
-        bank.update_clock(None);
         if bank
             .feature_set
             .is_active(&feature_set::enable_accumulator_sysvar::id())
         {
             bank.update_accumulator();
         }
+        bank.update_clock(None);
+
         bank.update_rent();
         bank.update_epoch_schedule();
         bank.update_recent_blockhashes();
@@ -1704,11 +1705,11 @@ impl Bank {
         let (_, update_sysvars_time_us) = measure_us!({
             new.update_slot_hashes();
             new.update_stake_history(Some(parent_epoch));
-            new.update_clock(Some(parent_epoch));
             if feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
                 info!("Updating accumulator. Parent_epoch: {}", parent_epoch);
                 new.update_accumulator();
             }
+            new.update_clock(Some(parent_epoch));
             new.update_fees();
         });
 
