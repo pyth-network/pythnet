@@ -2558,8 +2558,7 @@ impl Bank {
         let mut current_mapping_account_info =
             self.get_account_with_fixed_root(&cur_mapping_account_key);
         while let Some(mapping_account) = current_mapping_account_info {
-            let cur_mapping_account =
-                load::<solana_pyth::pyth::MappingAccount>(mapping_account.data());
+            let cur_mapping_account = load::<MappingAccount>(mapping_account.data());
             for p in cur_mapping_account.products_list.into_iter() {
                 if p == Pubkey::default().to_bytes() {
                     continue;
@@ -2580,10 +2579,10 @@ impl Bank {
                 }
             }
             cur_mapping_account_key = Pubkey::from(cur_mapping_account.next_mapping_account);
-            info!("next mapping account key: {cur_mapping_account_key:?}");
             if cur_mapping_account_key == Pubkey::default() {
                 break;
             }
+            info!("next mapping account key: {cur_mapping_account_key:?}");
             current_mapping_account_info =
                 self.get_account_with_fixed_root(&cur_mapping_account_key);
         }
