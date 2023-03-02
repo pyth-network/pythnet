@@ -2336,7 +2336,6 @@ impl Bank {
     }
 
     fn update_accumulator(&self) {
-        // use borsh::BorshDeserialize;
         use solana_pyth::accumulators::Accumulator;
         use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs};
         use solana_pyth::pyth::load;
@@ -2362,7 +2361,6 @@ impl Bank {
         // and the price service only has to request one account for each proof.
         // We won't blow up the validator disk with hundreds of thousands of accounts this way
 
-        let pyth_pubkey = Pubkey::from_str("FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH").unwrap();
         // TODO: store canonical proof_bump for security?
         // should price proof pdas be owned by pyth or wormhole?
         let (proof_pda, _proof_bump) = Pubkey::find_program_address(
@@ -2376,10 +2374,10 @@ impl Bank {
 
         self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
             let price_feed_ids = self.get_price_feeds();
-            // info!("price_feed_ids: {:?}", price_feed_ids.first());
+            info!("price_feed_ids: {:?}", &price_feed_ids[0..3]);
             let price_feed_accts: Vec<AccountSharedData> = price_feed_ids
                 .iter()
-                .map(|pf| self.get_account_with_fixed_root(pf).unwrap())
+                .filter_map(|pf| self.get_account_with_fixed_root(pf))
                 .collect();
 
             let price_feed_accts = price_feed_accts
@@ -2431,8 +2429,6 @@ impl Bank {
     // we could also literally send the ring buffer index in the message
     // (as opposed to an incrementing count that has to get modded)
     fn post_accumulator_attestation(&self) {
-        // use borsh::BorshDeserialize;
-        // use borsh::de::BorshDeserialize;
         use solana_pyth::accumulators::Accumulator;
         use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs};
         use solana_pyth::pyth::load;
@@ -2442,17 +2438,10 @@ impl Bank {
         use solana_sdk::pyth::{
             price_proofs::create_account as create_price_proof_account,
             wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
-            PYTH_PID,
+            ACCUMULATOR_EMITTER_ADDR, ACCUMULATOR_SEQUENCE_ADDR, PYTH_PID,
         };
         let clock = self.clock();
         let ring_buffer_idx = clock.slot % 100;
-        // accumulator_message_pda: 9VKyMGaKKJLUMBA5Fnf3dFiWMqGQkM979b5PP3rp62ck
-        // emitter_pda_key: G9LV2mp9ua1znRAfYwZz5cPiJMAbo1T6mbjdQsDZuMJg
-        // sequence_pda_key: HiqU8jiyUoFbRjf4YFAKRFWq5NZykEYC6mWhXXnoszJR
-
-        // TODO: make this a const
-        let (accumulator_message_pda, _) =
-            Pubkey::find_program_address(&[b"AccumulatorMessage"], &WORMHOLE_PID);
 
         let accumulator_attestation = solana_pyth::AccumulatorAttestation {
             // accumulator: self.accumulator().get_root().unwrap(),
@@ -2462,26 +2451,14 @@ impl Bank {
             timestamp: clock.unix_timestamp,
         };
         info!("accumulator_pda: {accumulator_message_pda:?}");
-        //TODO: make this a const
-        //seeds = ["emitter"], seeds::program = cpiProgramId
-        let (emitter_pda_key, _) =
-            Pubkey::find_program_address(&[b"emitter"], &sysvar::accumulator::id());
-        //seeds = ["Sequence", wormholeEmitter], seeds::program = wormholeProgram
-        let (sequence_pda_key, _) = Pubkey::find_program_address(
-            &[b"Sequence", &emitter_pda_key.to_bytes()],
-            &WORMHOLE_PID,
-        );
-        let mut seq_acct = match self.get_account_with_fixed_root(&sequence_pda_key) {
+
+        let mut seq_acct = match self.get_account_with_fixed_root(&ACCUMULATOR_SEQUENCE_ADDR) {
             Some(mut account) => {
                 solana_sdk::borsh::try_from_slice_unchecked(account.data()).unwrap()
             }
             None => AccumulatorSequenceTracker::default(),
         };
-        info!(
-            "emitter_pda_key: {:?}, sequence_pda_key: {:?}, sequence: {:?}",
-            emitter_pda_key, sequence_pda_key, seq_acct.sequence
-        );
-        // postedmessageunreliabledata = [b"msu", {msg}]
+        info!("sequence: {:?}", seq_acct.sequence);
         let msg_data = solana_pyth::wormhole::PostedMessageUnreliableData {
             message: solana_pyth::wormhole::MessageData {
                 //TODO: handle this
@@ -2496,7 +2473,7 @@ impl Bank {
                 nonce: 0,
                 sequence: seq_acct.sequence,
                 emitter_chain: 26,
-                emitter_address: emitter_pda_key.to_bytes(),
+                emitter_address: ACCUMULATOR_EMITTER_ADDR.to_bytes(),
                 payload: <solana_pyth::AccumulatorAttestation<_>>::serialize(
                     &accumulator_attestation,
                 )
@@ -2509,7 +2486,10 @@ impl Bank {
         let seq_balance = self.get_minimum_balance_for_rent_exemption(seq_tracker_data_len);
         let seq_tracker_account =
             create_seq_tracker_account(seq_acct, seq_tracker_data_len, seq_balance, &WORMHOLE_PID);
-        self.store_account_and_update_capitalization(&sequence_pda_key, &seq_tracker_account);
+        self.store_account_and_update_capitalization(
+            &ACCUMULATOR_SEQUENCE_ADDR,
+            &seq_tracker_account,
+        );
 
         info!("msg_data.message: {:?}", msg_data.message);
 
@@ -2519,6 +2499,11 @@ impl Bank {
         let message_balance = self.get_minimum_balance_for_rent_exemption(message_data_len);
         let accumulator_message_account =
             create_wormhole_msg_account(msg_data, message_data_len, message_balance, &WORMHOLE_PID);
+
+        // accumulator_message_pda: 9VKyMGaKKJLUMBA5Fnf3dFiWMqGQkM979b5PP3rp62ck
+        // TODO: do we want to use a ring buffer for accumulator messages? if not, make this a const
+        let (accumulator_message_pda, _) =
+            Pubkey::find_program_address(&[b"AccumulatorMessage"], &WORMHOLE_PID);
 
         self.store_account_and_update_capitalization(
             &accumulator_message_pda,

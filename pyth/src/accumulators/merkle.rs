@@ -64,18 +64,6 @@ impl Accumulator for MerkleTree {
         I: Iterator<Item = (AccumulatorId, &'r V)> + Clone,
         V: 'r + std::hash::Hash,
     {
-        // let mut merkle = Self::from_slices(
-        //     input
-        //         .clone()
-        //         .map(|(_, p_a): (_, &'r V)| AccumulatorPrice {
-        //             price_type: p_a.price_type,
-        //         })
-        //         .collect::<Vec<AccumulatorPrice>>()
-        //         .as_slice(),
-        // );
-
-        // pub fn from_slices<T: AsRef<[u8]>>(items: &[T]) -> Self
-        //
         let mut merkle = Self::from_slices(
             input
                 .clone()
@@ -94,31 +82,6 @@ impl Accumulator for MerkleTree {
 
         merkle
     }
-
-    // fn new<'r, I, V: 'r>(input: I) -> Self
-    // where
-    //     I: Iterator<Item = (AccumulatorId, &'r V)> + Clone,
-    // {
-    //     let mut merkle = Self::from_slices(
-    //         input
-    //             .clone()
-    //             .map(|(_, p_a): (_, &'r V)| AccumulatorPrice {
-    //                 price_type: p_a.price_type,
-    //             })
-    //             .collect::<Vec<AccumulatorPrice>>()
-    //             .as_slice(),
-    //     );
-    //
-    //     //TODO: plz handle failures & errors
-    //     merkle.proofs = input
-    //         .enumerate()
-    //         .map(|(idx, (id, _))| (id, merkle.find_path(idx).unwrap()))
-    //         .collect();
-    //
-    //     merkle.root = merkle.get_root().unwrap().clone();
-    //
-    //     merkle
-    // }
 
     fn proof(&self) -> Self::Proof {
         self.proofs.clone()
@@ -241,7 +204,6 @@ impl MerkleTree {
         Some(path)
     }
 
-    // pub new<H: Hash>(price_account: Vec<H>)
     pub fn new_merkle<'r, I>(price_accounts: I) -> Self
     where
         I: Iterator<Item = (PriceId, &'r PriceAccount)> + Clone,
@@ -301,14 +263,9 @@ impl<'a> MerkleNode {
     }
 }
 
-//old
 //TODO: update this to correct value/type later
-// pub type PriceHash = Proof;
-// pub type PriceId = Pubkey;
-// pub type PriceProof = (PriceId, PriceHash);
 //
-// /** using `sdk/program/src/slot_hashes.rs` as a reference **/
-//
+/** using `sdk/program/src/slot_hashes.rs` as a reference **/
 
 //TODO: newtype or type alias?
 //  also double check alignment in conjunction with `AccumulatorPrice`
