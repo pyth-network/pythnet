@@ -99,51 +99,9 @@ impl AsRef<[u8]> for AccumulatorPrice {
     }
 }
 
-/** using `sdk/program/src/slot_hashes.rs` as a reference **/
-
-//
-// impl FromIterator<(PriceId, PriceHash<'_>)> for PriceProofs<'_> {
-//     fn from_iter<I: for<'a> IntoIterator<Item = (PriceId, PriceHash<'a>)>>(iter: 'a I) -> Self {
-//         Self(iter.into_iter().collect())
-//     }
-//     // fn from_iter<I: IntoIterator<Item = (PriceId, PriceHash)>>(iter: I) -> Self {
-//     //     Self(iter.into_iter().collect())
-//     // }
-// }
-
-// impl Deref for PriceProofs<'_> {
-//     type Target<'a> = Vec<PriceProof<'a>>;
-//     fn deref(&self) -> &Self::Target {
-//         &self.0
-//     }
-// }
-// pub fn load_checked<'a, T: PythAccount>(
-//     account: &'a AccountInfo,
-//     version: u32,
-// ) -> Result<RefMut<'a, T>, ProgramError> {
-//     pyth_assert(
-//         account.data_len() >= T::MINIMUM_SIZE,
-//         OracleError::AccountTooSmall.into(),
-//     )?;
-//
-//     {
-//         let account_header = load_account_as::<AccountHeader>(account)?;
-//         pyth_assert(
-//             account_header.magic_number == PC_MAGIC
-//                 && account_header.version == version
-//                 && account_header.account_type == T::ACCOUNT_TYPE,
-//             OracleError::InvalidAccountHeader.into(),
-//         )?;
-//     }
-//
-//     load_account_as_mut::<T>(account)
-// }
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccumulatorAttestation<P: serde::Serialize> {
-    // pub accumulator_root: P,
-    // pub accumulator: MerkleTree,
     pub accumulator: P,
 
     #[serde(serialize_with = "use_to_string")]
