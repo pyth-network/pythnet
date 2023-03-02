@@ -59,7 +59,6 @@ pub struct AccumulatorValue<V: std::hash::Hash> {
 }
 
 /**
-bless chatGPT
 
 This implementation uses std::mem::transmute to cast
 a reference to the AccumulatorPrice struct to a
@@ -179,13 +178,6 @@ impl<P: serde::Serialize + for<'a> serde::Deserialize<'a>> AccumulatorAttestatio
         // make sure that the number of bytes after hdr_size is
         // reflected in the P2W_FORMAT_HDR_SIZE constant.
 
-        // n_attestations
-        // buf.extend_from_slice(&(self.price_attestations.len() as u16).to_be_bytes()[..]);
-
-        // TODO: is u16 enough?
-        //
-        // buf.extend_from_slice(&(self.accumulator.merkle_tree.leaf_count as u16).to_be_bytes()[..]);
-
         let AccumulatorAttestation {
             // accumulator_root: accumulator_root,
             accumulator,
@@ -194,12 +186,11 @@ impl<P: serde::Serialize + for<'a> serde::Deserialize<'a>> AccumulatorAttestatio
             timestamp,
         } = self;
 
-        // let mut accumulator_buf = Vec::with_capacity(accumulator.merkle_tree.leaf_count);
         //TODO: decide on pyth-accumulator-over-wormhole serialization format.
 
         let mut serialized_acc = bincode::serialize(&accumulator).unwrap();
 
-        // TODO: always 32?
+        // TODO: always 32? is u16 enough?
         buf.extend_from_slice(&(serialized_acc.len() as u16).to_be_bytes()[..]);
 
         buf.append(&mut serialized_acc);
@@ -270,19 +261,6 @@ impl<P: serde::Serialize + for<'a> serde::Deserialize<'a>> AccumulatorAttestatio
         }
 
         // Header consumed, continue with remaining fields
-        // let mut accum_len_vec = vec![0u8; mem::size_of::<u16>()];
-        // bytes.read_exact(accum_len_vec.as_mut_slice())?;
-        // let accum_len = u16::from_be_bytes(accum_len_vec.as_slice().try_into()?);
-        //
-        // // let accum_vec = Vec::with_capacity(accum_len_vec as usize);
-        // let mut accum_vec = vec![0u8; accum_len as usize];
-        // bytes.read_exact(accum_vec.as_mut_slice())?;
-        // let accumulator =
-        //     match <MerkleTree as BorshDeserialize>::deserialize(&mut accum_vec.as_slice()) {
-        //         Ok(acc) => acc,
-        //         Err(e) => return Err(format!("AccumulatorDeserialization failed: {}", e).into()),
-        //     };
-
         let mut accum_len_vec = vec![0u8; mem::size_of::<u16>()];
         bytes.read_exact(accum_len_vec.as_mut_slice())?;
         let accum_len = u16::from_be_bytes(accum_len_vec.as_slice().try_into()?);
@@ -390,7 +368,6 @@ impl AsRef<[u8]> for Identifier {
 mod tests {
     use super::*;
     use crate::accumulators::Accumulator;
-    // use crate::accumulator::PayloadId::AccumulationAttestation;
     use crate::pyth::*;
 
     pub fn new_unique_pubkey() -> RawPubkey {
@@ -408,38 +385,6 @@ mod tests {
             }
         }
     }
-
-    // TODO: - keep current cfg_attr or implement it all here?
-    // impl Default for crate::pyth::PriceInfo {
-    //     fn default() -> Self {
-    //         Self {
-    //            todo!()
-    //         }
-    //     }
-    // }
-    // impl Default for crate::pyth::PriceEma {
-    //     fn default() -> Self {
-    //         Self {
-    //            todo!()
-    //         }
-    //     }
-    // }
-    // impl Default for crate::pyth::PriceComponent {
-    //     fn default() -> Self {
-    //         Self {
-    //            todo!()
-    //          }
-    //     }
-    // }
-    //
-    // impl Default for crate::pyth::PriceAccount {
-    //     fn default() -> Self {
-    //         Self {
-    //             ..Default::default()
-    //         }
-    //     }
-    // }
-    //
 
     impl AccountHeader {
         fn new(account_type: u32) -> Self {
@@ -533,9 +478,7 @@ mod tests {
             .iter()
             .map(|(pk, pa)| (*pk, pa))
             .into_iter();
-        // let (accumulator, proofs) = MerkleTree::new_merkle(accum_input);
 
-        // let (accumulator, proofs) = MerkleTree::new_merkle(accum_input);
         let accumulator = MerkleTree::new_merkle(accum_input);
         // arbitrary values
         let ring_buffer_idx = 17;

@@ -68,7 +68,6 @@ impl PythAccount for ProductAccount {
 }
 
 #[repr(C)]
-// #[derive(Copy, Clone, Pod, Zeroable)]
 #[cfg_attr(not(test), derive(Copy, Clone, Pod, Zeroable))]
 #[cfg_attr(test, derive(Copy, Clone, Pod, Zeroable, Default))]
 pub struct PriceAccount {
@@ -177,58 +176,6 @@ pub trait PythAccount: Pod {
     /// `minimum_size()` is the minimum size that the solana account holding the struct needs to
     /// have. `INITIAL_SIZE` <= `minimum_size()`
     const MINIMUM_SIZE: usize = size_of::<Self>();
-
-    // /// Given an `AccountInfo`, verify it is sufficiently large and has the correct discriminator.
-    // fn initialize<'a>(
-    //     account: &'a AccountInfo,
-    //     version: u32,
-    // ) -> Result<RefMut<'a, Self>, ProgramError> {
-    //     pyth_assert(
-    //         account.data_len() >= Self::MINIMUM_SIZE,
-    //         OracleError::AccountTooSmall.into(),
-    //     )?;
-    //
-    //     check_valid_fresh_account(account)?;
-    //     clear_account(account)?;
-    //
-    //     {
-    //         let mut account_header = load_account_as_mut::<AccountHeader>(account)?;
-    //         account_header.magic_number = PC_MAGIC;
-    //         account_header.version = version;
-    //         account_header.account_type = Self::ACCOUNT_TYPE;
-    //         account_header.size = Self::INITIAL_SIZE;
-    //     }
-    //     load_account_as_mut::<Self>(account)
-    // }
-    //
-    // /// Creates PDA accounts only when needed, and initializes it as one of the Pyth accounts.
-    // /// This PDA initialization assumes that the account has 0 lamports.
-    // /// TO DO: Fix this once we can resize the program.
-    // fn initialize_pda<'a>(
-    //     account: &AccountInfo<'a>,
-    //     funding_account: &AccountInfo<'a>,
-    //     system_program: &AccountInfo<'a>,
-    //     program_id: &Pubkey,
-    //     seeds: &[&[u8]],
-    //     version: u32,
-    // ) -> Result<(), ProgramError> {
-    //     let target_rent = get_rent()?.minimum_balance(Self::MINIMUM_SIZE);
-    //
-    //     if account.data_len() == 0 {
-    //         create(
-    //             funding_account,
-    //             account,
-    //             system_program,
-    //             program_id,
-    //             Self::MINIMUM_SIZE,
-    //             target_rent,
-    //             seeds,
-    //         )?;
-    //         Self::initialize(account, version)?;
-    //     }
-    //
-    //     Ok(())
-    // }
 }
 
 /// Interpret the bytes in `data` as a value of type `T`

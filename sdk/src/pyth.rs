@@ -6,6 +6,10 @@ use {
     solana_sdk_macro::pubkey,
 };
 
+/// Pubkey::find_program_address(&[b"emitter"], &sysvar::accumulator::id());
+pub const ACCUMULATOR_EMITTER_ADDR: Pubkey = pubkey!("G9LV2mp9ua1znRAfYwZz5cPiJMAbo1T6mbjdQsDZuMJg");
+/// Pubkey::find_program_address(&[b"Sequence", &emitter_pda_key.to_bytes()], &WORMHOLE_PID);
+pub const ACCUMULATOR_SEQUENCE_ADDR: Pubkey = pubkey!("HiqU8jiyUoFbRjf4YFAKRFWq5NZykEYC6mWhXXnoszJR");
 pub const PYTH_PID: Pubkey = pubkey!("FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH");
 
 pub mod price_proofs {
