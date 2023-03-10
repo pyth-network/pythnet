@@ -1,6 +1,6 @@
 // TODO: Go back to a reference based implementation ala Solana's original.
 
-use crate::accumulators::{Accumulator, AccumulatorId};
+use crate::accumulators::Accumulator;
 use crate::hashers::keccak256::Keccak256Hasher;
 use crate::hashers::{Hashable, Hasher};
 use std::collections::HashSet;
@@ -30,14 +30,14 @@ fn hashv(data: &[&[u8]]) -> Hash {
 }
 
 macro_rules! hash_leaf {
-    {$d:ident} => {
-        hashv(&[LEAF_PREFIX, $d])
+    {$x:ty, $d:ident} => {
+        <$x as Hasher>::hashv(&[LEAF_PREFIX, $d])
     }
 }
 
 macro_rules! hash_intermediate {
-    {$l:ident, $r:ident} => {
-        hashv(&[INTERMEDIATE_PREFIX, $l.as_ref(), $r.as_ref()])
+    {$x:ty, $l:ident, $r:ident} => {
+        <$x as Hasher>::hashv(&[INTERMEDIATE_PREFIX, $l.as_ref(), $r.as_ref()])
     }
 }
 
@@ -51,7 +51,7 @@ macro_rules! hash_intermediate {
     Eq,
     BorshSerialize,
     BorshDeserialize,
-    Serialize,
+    /* Serialize, */
     /*Deserialize,*/ Default,
 )]
 pub struct MerkleTree<H: Hasher> {
@@ -64,19 +64,28 @@ pub struct MerkleAccumulator<'a, H: Hasher> {
     pub items: Vec<&'a [u8]>,
 }
 
-impl<'a> Accumulator for MerkleAccumulator<'a, Keccak256Hasher> {
-    type Proof = Proof<'a>;
+impl<'a> Accumulator<'a> for MerkleAccumulator<'a, Keccak256Hasher> {
+    // MerklePath
+    // type Proof = Proof<'a>;
+    type Proof = MerklePath<Keccak256Hasher>;
+
+    fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self> {
+        let items: Vec<&[u8]> = items.copied().collect();
+        let tree = MerkleTree::new(&items);
+        Some(Self {
+            accumulator: tree,
+            items,
+        })
+    }
 
     fn prove(&'a self, item: &[u8]) -> Option<Self::Proof> {
-        todo!()
+        let index = self.items.iter().position(|i| i == &item)?;
+        self.accumulator.find_path(index)
     }
 
     fn verify(&'a self, proof: Self::Proof, item: &[u8]) -> Option<bool> {
-        todo!()
-    }
-
-    fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self> {
-        todo!()
+        let item = hash_leaf!(Keccak256Hasher, item);
+        Some(proof.verify(item))
     }
 }
 
@@ -113,8 +122,8 @@ impl<H: Hasher> MerkleTree<H> {
         }
     }
 
-    pub fn from_slices<T: AsRef<[u8]>>(items: &[T]) -> Self {
-        let cap = MerkleTree::calculate_vec_capacity(items.len());
+    pub fn new<T: AsRef<[u8]>>(items: &[T]) -> Self {
+        let cap = MerkleTree::<H>::calculate_vec_capacity(items.len());
         let mut mt = MerkleTree {
             leaf_count: items.len(),
             nodes: Vec::with_capacity(cap),
@@ -122,49 +131,54 @@ impl<H: Hasher> MerkleTree<H> {
 
         for item in items {
             let item = item.as_ref();
-            let hash = hash_leaf!(item);
+            let hash = hash_leaf!(H, item);
             mt.nodes.push(hash);
         }
 
-        let mut level_len = MerkleTree::next_level_len(items.len());
+        let mut level_len = MerkleTree::<H>::next_level_len(items.len());
         let mut level_start = items.len();
         let mut prev_level_len = items.len();
         let mut prev_level_start = 0;
         while level_len > 0 {
             for i in 0..level_len {
                 let prev_level_idx = 2 * i;
-                let lsib = &mt.nodes[prev_level_start + prev_level_idx];
-                let rsib = if prev_level_idx + 1 < prev_level_len {
-                    &mt.nodes[prev_level_start + prev_level_idx + 1]
-                } else {
-                    // Duplicate last entry if the level length is odd
-                    &mt.nodes[prev_level_start + prev_level_idx]
+                let lsib =
+                    borsh::BorshSerialize::try_to_vec(&mt.nodes[prev_level_start + prev_level_idx])
+                        .unwrap();
+                let rsib = {
+                    let rsib = if prev_level_idx + 1 < prev_level_len {
+                        mt.nodes[prev_level_start + prev_level_idx + 1]
+                    } else {
+                        // Duplicate last entry if the level length is odd
+                        mt.nodes[prev_level_start + prev_level_idx]
+                    };
+                    borsh::BorshSerialize::try_to_vec(&rsib).unwrap()
                 };
 
-                let hash = hash_intermediate!(lsib, rsib);
+                let hash = hash_intermediate!(H, lsib, rsib);
                 mt.nodes.push(hash);
             }
             prev_level_start = level_start;
             prev_level_len = level_len;
             level_start += level_len;
-            level_len = MerkleTree::next_level_len(level_len);
+            level_len = MerkleTree::<H>::next_level_len(level_len);
         }
 
         mt
     }
 
-    pub fn get_root(&self) -> Option<&Hash> {
+    pub fn get_root(&self) -> Option<&H::Hash> {
         self.nodes.iter().last()
     }
 
-    pub fn find_path(&self, index: usize) -> Option<MerklePath> {
+    pub fn find_path(&self, index: usize) -> Option<MerklePath<H>> {
         if index >= self.leaf_count as usize {
             return None;
         }
 
         let mut level_len = self.leaf_count as usize;
         let mut level_start = 0;
-        let mut path = MerklePath::default();
+        let mut path = MerklePath::<H>::default();
         let mut node_index = index;
         let mut lsib = None;
         let mut rsib = None;
@@ -189,25 +203,25 @@ impl<H: Hasher> MerkleTree<H> {
             node_index /= 2;
 
             level_start += level_len;
-            level_len = MerkleTree::next_level_len(level_len);
+            level_len = MerkleTree::<H>::next_level_len(level_len);
         }
         Some(path)
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MerklePath(Vec<MerkleNode>);
+#[derive(Clone, Default, PartialEq, Eq, BorshSerialize)]
+pub struct MerklePath<H: Hasher>(Vec<MerkleNode<H>>);
 
-impl MerklePath {
-    pub fn push(&mut self, entry: MerkleNode) {
+impl<H: Hasher> MerklePath<H> {
+    pub fn push(&mut self, entry: MerkleNode<H>) {
         self.0.push(entry)
     }
 
-    pub fn verify(&self, candidate: Hash) -> bool {
+    pub fn verify(&self, candidate: H::Hash) -> bool {
         let result = self.0.iter().try_fold(candidate, |candidate, pe| {
-            let lsib = pe.1.unwrap_or(candidate);
-            let rsib = pe.2.unwrap_or(candidate);
-            let hash = hash_intermediate!(lsib, rsib);
+            let lsib = borsh::BorshSerialize::try_to_vec(&pe.1.unwrap_or(candidate)).unwrap();
+            let rsib = borsh::BorshSerialize::try_to_vec(&pe.2.unwrap_or(candidate)).unwrap();
+            let hash = hash_intermediate!(H, lsib, rsib);
 
             if hash == pe.0 {
                 Some(hash)
@@ -219,11 +233,15 @@ impl MerklePath {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct MerkleNode(Hash, Option<Hash>, Option<Hash>);
+#[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize)]
+pub struct MerkleNode<H: Hasher>(H::Hash, Option<H::Hash>, Option<H::Hash>);
 
-impl<'a> MerkleNode {
-    pub fn new(target: Hash, left_sibling: Option<Hash>, right_sibling: Option<Hash>) -> Self {
+impl<'a, H: Hasher> MerkleNode<H> {
+    pub fn new(
+        target: H::Hash,
+        left_sibling: Option<H::Hash>,
+        right_sibling: Option<H::Hash>,
+    ) -> Self {
         assert!(left_sibling.is_none() ^ right_sibling.is_none());
         Self(target, left_sibling, right_sibling)
     }
@@ -237,11 +255,11 @@ impl<'a> MerkleNode {
 //  also double check alignment in conjunction with `AccumulatorPrice`
 // #[repr(transparent)]
 #[repr(C)]
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Default)]
-pub struct PriceProofs(Vec<(PriceId, MerklePath)>);
+#[derive(BorshSerialize, PartialEq, Eq, Default)]
+pub struct PriceProofs<H: Hasher>(Vec<(PriceId, MerklePath<H>)>);
 
-impl PriceProofs {
-    pub fn new(price_proofs: &[(PriceId, MerklePath)]) -> Self {
+impl<H: Hasher> PriceProofs<H> {
+    pub fn new(price_proofs: &[(PriceId, MerklePath<H>)]) -> Self {
         let mut price_proofs = price_proofs.to_vec();
         price_proofs.sort_by(|(a, _), (b, _)| a.cmp(b));
         Self(price_proofs)

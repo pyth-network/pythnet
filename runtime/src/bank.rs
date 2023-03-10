@@ -2399,7 +2399,7 @@ impl Bank {
             self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
 
             // TODO: do we even need an accumulator sysvar?
-            create_account::<sysvar::accumulator::MerkleTree>(
+            create_account::<sysvar::accumulator::MerkleTree<solana_pyth::hashers::Keccak256Hasher>>(
                 //TODO: MerkleTree sysvar serialize
                 &acc,
                 self.inherit_specially_retained_account_fields(account),

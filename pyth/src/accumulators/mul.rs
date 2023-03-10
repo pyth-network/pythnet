@@ -60,8 +60,8 @@ mod test {
             println!("Mul:");
             println!("Proof:  {:?}", accumulator.verify(proof, &item_a));
             println!("Proof:  {:?}", accumulator.verify(proof, &item_d));
-            assert!(accumulator.verify(proof, &item_a));
-            assert!(!accumulator.verify(proof, &item_d));
+            assert!(accumulator.verify(proof, &item_a).unwrap());
+            assert_ne!(true, accumulator.verify(proof, &item_d).unwrap());
         }
     }
 }

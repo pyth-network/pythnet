@@ -1,6 +1,6 @@
 use crate::hashers::Hasher;
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Keccak256Hasher {}
 
 impl Hasher for Keccak256Hasher {
@@ -13,6 +13,15 @@ impl Hasher for Keccak256Hasher {
         // 	hasher.update(d);
         // }
         hasher.update(data);
+        hasher.finalize().into()
+    }
+
+    fn hashv(data: &[&[u8]]) -> [u8; 32] {
+        use sha3::{Digest, Keccak256};
+        let mut hasher = Keccak256::new();
+        for d in data {
+            hasher.update(d);
+        }
         hasher.finalize().into()
     }
 }
