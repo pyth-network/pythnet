@@ -40,7 +40,8 @@ macro_rules! hash_intermediate {
     BorshSerialize,
     BorshDeserialize,
     /* Serialize, */
-    /*Deserialize,*/ Default,
+    /*Deserialize,*/
+    Default,
 )]
 pub struct MerkleTree<H: Hasher> {
     pub leaf_count: usize,
@@ -49,12 +50,12 @@ pub struct MerkleTree<H: Hasher> {
 
 pub struct MerkleAccumulator<'a, H: Hasher = Keccak256Hasher> {
     pub accumulator: MerkleTree<H>,
+    /// for the solana merkle tree, we need to know the index of each item in the tree
+    /// which is why we keep the original items
     pub items: Vec<&'a [u8]>,
 }
 
 impl<'a, H: Hasher + 'a> Accumulator<'a> for MerkleAccumulator<'a, H> {
-    // MerklePath
-    // type Proof = Proof<'a>;
     type Proof = MerklePath<H>;
 
     fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self> {
@@ -311,14 +312,24 @@ mod test {
         set.insert(&item_c);
 
         let accumulator = MerkleAccumulator::<'_, Keccak256Hasher>::from_set(set.iter()).unwrap();
-        println!("Merkle:");
         let proof = accumulator.prove(&item_a).unwrap();
-        println!("Proof:  {:02X?}", proof);
+        // println!("Proof:  {:02X?}", proof);
         assert!(accumulator.verify(proof, &item_a));
-        // println!("Valid:  {:?}", accumulator.verify(proof, &item_a));
         let proof = accumulator.prove(&item_a).unwrap();
-        // println!("Fails:  {:?}", accumulator.verify(proof, &item_d));
-        // println!("Size:   {:?}", size_of::<merkle_tree::Proof>());
+        println!(
+            r"
+                Sizes:
+                    MerkleAccumulator::Proof    {:?}
+                    Keccak256Hasher::Hash       {:?}
+                    MerkleNode                  {:?}
+                    MerklePath                  {:?}
+                
+            ",
+            size_of::<<MerkleAccumulator<'_> as Accumulator>::Proof>(),
+            size_of::<<Keccak256Hasher as Hasher>::Hash>(),
+            size_of::<MerkleNode<Keccak256Hasher>>(),
+            size_of::<MerklePath<Keccak256Hasher>>()
+        );
         assert!(!accumulator.verify(proof, &item_d));
     }
 }

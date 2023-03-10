@@ -41,65 +41,6 @@ pub(crate) type PriceId = RawPubkey;
 /*** Dummy Field(s) for now just to test updating the sysvar ***/
 pub type Slot = u64;
 
-// TODO:
-//  1. this needs to store all relevant information that will go into the
-//  proof - everything but the unused fields
-//  2. this should eventually be generic
-// #[repr(transparent)]
-// pub struct AccumulatorPrice(u32);
-// TODO: check if this is correct repr
-//  might need to use #[repr(align(x))]
-//  -> see pyth-client/program/rust/tests/test_utils.rs AccountSetup
-#[repr(C)]
-pub struct AccumulatorPrice {
-    pub price_type: u32,
-}
-
-pub struct AccumulatorValue<V: std::hash::Hash> {
-    pub value: V,
-}
-
-/**
-
-This implementation uses std::mem::transmute to cast
-a reference to the AccumulatorPrice struct to a
-byte array of the same size, and then creates a slice from the resulting pointer.
-The size of the slice is the size of the struct in bytes,
-which is the sum of the sizes of the u32 and u64 fields.
-
-Note that this implementation still uses unsafe code
-to create a raw pointer to the AccumulatorPrice struct,
-so you need to ensure that the pointer is valid and that
-the memory it points to is properly aligned and initialized.
-
-struct AccumulatorPrice {
-    price_type: u32,
-    price: u64,
-}
-
-impl AsRef<[u8]> for AccumulatorPrice {
-    fn as_ref(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                std::mem::transmute::<&AccumulatorPrice, &[u8; std::mem::size_of::<AccumulatorPrice>()]>(self).as_ptr(),
-                std::mem::size_of::<AccumulatorPrice>(),
-            )
-        }
-    }
-}
-*/
-
-impl AsRef<[u8]> for AccumulatorPrice {
-    fn as_ref(&self) -> &[u8] {
-        unsafe {
-            std::slice::from_raw_parts(
-                &self.price_type as *const u32 as *const u8,
-                std::mem::size_of::<u32>(),
-            )
-        }
-    }
-}
-
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccumulatorAttestation<P: serde::Serialize> {
