@@ -2316,7 +2316,9 @@ impl Bank {
         });
     }
 
-    pub fn accumulator(&self) -> sysvar::accumulator::MerkleTree {
+    pub fn accumulator(
+        &self,
+    ) -> sysvar::accumulator::MerkleTree<solana_pyth::hashers::Keccak256Hasher> {
         from_account(
             &self
                 .get_account(&sysvar::accumulator::id())
@@ -2325,18 +2327,7 @@ impl Bank {
         .unwrap_or_default()
     }
 
-    // Using existential types for return type
-    pub fn accumulator_new(&self) -> impl solana_pyth::accumulators::Accumulator {
-        from_account::<sysvar::accumulator::MerkleTree, solana_sdk::account::AccountSharedData>(
-            &self
-                .get_account(&sysvar::accumulator::id())
-                .unwrap_or_default(),
-        )
-        .unwrap_or_default()
-    }
-
     fn update_accumulator(&self) {
-        use solana_pyth::accumulators::Accumulator;
         use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs};
         use solana_pyth::pyth::load;
         use solana_pyth::pyth::PriceAccount;
@@ -2431,7 +2422,6 @@ impl Bank {
     // we could also literally send the ring buffer index in the message
     // (as opposed to an incrementing count that has to get modded)
     fn post_accumulator_attestation(&self) {
-        use solana_pyth::accumulators::Accumulator;
         use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs};
         use solana_pyth::pyth::load;
         use solana_pyth::pyth::PriceAccount;

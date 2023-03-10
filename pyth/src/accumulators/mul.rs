@@ -1,4 +1,4 @@
-use crate::accumulators::Accumulator2;
+use crate::accumulators::Accumulator;
 use crate::hashers::prime::PrimeHasher;
 use crate::hashers::Hasher;
 use std::hash::Hash;
@@ -8,7 +8,7 @@ pub struct MulAccumulator<H: Hasher> {
     pub items: Vec<H::Hash>,
 }
 
-impl<'a> Accumulator2<'a> for MulAccumulator<PrimeHasher> {
+impl<'a> Accumulator<'a> for MulAccumulator<PrimeHasher> {
     type Proof = <PrimeHasher as Hasher>::Hash;
 
     fn prove(&self, item: &[u8]) -> Option<Self::Proof> {
