@@ -2380,6 +2380,8 @@ impl Bank {
                 .filter_map(|pf| self.get_account_with_fixed_root(pf))
                 .collect();
 
+            // TODO: .map_filter(verify::<PriceAccount>(ai.data()))
+            // note - load only checks length/alignment not actual content of bytes
             let price_feed_accts = price_feed_accts
                 .iter()
                 .map(|ai| load::<PriceAccount>(ai.data()))

@@ -14,7 +14,7 @@ fast-math          = "*"
 hex                = { version = "*", features = ["serde"] }
 serde              = { version = "*", features = ["derive"] }
 sha3               = "*"
-
+slow_primes        = "*"
 
 [dev-dependencies]
 rand               = "*"

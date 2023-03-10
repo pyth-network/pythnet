@@ -1,6 +1,9 @@
 // TODO: Go back to a reference based implementation ala Solana's original.
 
-use crate::accumulators::{Accumulator, AccumulatorId};
+use crate::accumulators::{Accumulator, Accumulator2, AccumulatorId};
+use crate::hashers::keccak256::Keccak256Hasher;
+use crate::hashers::{Hashable, Hasher};
+use std::collections::HashSet;
 use {
     crate::pyth::PriceAccount,
     crate::{AccumulatorPrice, Hash, PriceId},
@@ -15,6 +18,8 @@ const LEAF_PREFIX: &[u8] = &[0];
 const INTERMEDIATE_PREFIX: &[u8] = &[1];
 
 // Implement a function that takes a list of byte slices, and hashes them all using sha3 Keccak.
+// TODO: do we still want to switch to keccak256/sha3?
+// original costs/benchmarks from hackmd page were using sha2
 fn hashv(data: &[&[u8]]) -> Hash {
     use sha3::{Digest, Keccak256};
     let mut hasher = Keccak256::new();
@@ -41,7 +46,7 @@ macro_rules! hash_intermediate {
 #[derive(
     Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, Default,
 )]
-pub struct MerkleTree {
+pub struct MerkleTreeOld {
     // pub leaf_count: usize,
     // pub nodes_count: usize,
     #[borsh_skip]
@@ -56,39 +61,111 @@ pub struct MerkleTree {
     pub root: Hash,
 }
 
-impl Accumulator for MerkleTree {
-    type Proof = Vec<(PriceId, MerklePath)>;
+/// An implementation of a Sha3/Keccak256 based Merkle Tree based on the implementation provided by
+/// solana-merkle-tree. This modifies the structure slightly to be serialization friendly, and to
+/// make verification cheaper on EVM based networks.
+#[derive(
+    Debug,
+    Clone,
+    PartialEq,
+    Eq,
+    BorshSerialize,
+    BorshDeserialize,
+    Serialize,
+    /*Deserialize,*/ Default,
+)]
+pub struct MerkleTree<H: Hasher> {
+    pub leaf_count: usize,
+    pub nodes: Vec<H::Hash>,
+}
 
-    fn new<'r, I, V>(input: I) -> Self
-    where
-        I: Iterator<Item = (AccumulatorId, &'r V)> + Clone,
-        V: 'r + std::hash::Hash,
-    {
-        let mut merkle = Self::from_slices(
-            input
-                .clone()
-                .map(|(_, p_a): (_, &'r V)| crate::AccumulatorPrice { price_type: 0u32 })
-                .collect::<Vec<AccumulatorPrice>>()
-                .as_slice(),
-        );
+pub struct MerkleAccumulator<'a, H: Hasher> {
+    pub accumulator: MerkleTree<H>,
+    pub items: Vec<&'a [u8]>,
+}
 
-        //TODO: plz handle failures & errors
-        merkle.proofs = input
-            .enumerate()
-            .map(|(idx, (id, _))| (id, merkle.find_path(idx).unwrap()))
-            .collect();
+impl<'a> Accumulator2 for MerkleAccumulator<'a, Keccak256Hasher> {
+    type Proof = Proof<'a>;
 
-        merkle.root = merkle.get_root().unwrap().clone();
-
-        merkle
+    fn prove(&'a self, item: &[u8]) -> Option<Self::Proof> {
+        todo!()
     }
 
-    fn proof(&self) -> Self::Proof {
-        self.proofs.clone()
+    fn verify(&'a self, proof: Self::Proof, item: &[u8]) -> Option<bool> {
+        todo!()
+    }
+
+    fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self> {
+        todo!()
     }
 }
 
-impl MerkleTree {
+// impl<'a, H: Hasher> Accumulator2<'a> for MerkleTree<H> {
+//     type Proof = Vec<(PriceId, MerklePath)>;
+//
+//     fn new<'r, I, V>(input: I) -> Self
+//     where
+//         I: Iterator<Item = (AccumulatorId, &'r V)> + Clone,
+//         V: 'r + std::hash::Hash,
+//     {
+//         let mut merkle = Self::from_slices(
+//             input
+//                 .clone()
+//                 .map(|(_, p_a): (_, &'r V)| crate::AccumulatorPrice { price_type: 0u32 })
+//                 .collect::<Vec<AccumulatorPrice>>()
+//                 .as_slice(),
+//         );
+//
+//         //TODO: plz handle failures & errors
+//         merkle.proofs = input
+//             .enumerate()
+//             .map(|(idx, (id, _))| (id, merkle.find_path(idx).unwrap()))
+//             .collect();
+//
+//         merkle.root = merkle.get_root().unwrap().clone();
+//
+//         merkle
+//     }
+//
+//     fn proof(&self) -> Self::Proof {
+//         self.proofs.clone()
+//     }
+// }
+
+// impl From<std::collections::HashSet<&[u8]>> for MerkleTreeOld {
+//     fn from(value: HashSet<&[u8]>) -> Self {
+//         Accumulator2::from_set(value.iter().collect());
+//     }
+// }
+// impl Accumulator2 for MerkleTree {
+//     //TODO: should Proof = MerklePath?
+//     // type Proof = Hash;
+//     type Proof = MerklePath;
+//
+//     fn from_set<T, H>(element_bytes: &[T]) -> Self {
+//         // convert element_bytes into vec of elements
+//         // to get the indexes
+//         // merkle tree can be constructed from different types of elements within the same tree
+//         // and can be different byte lengths
+//         let mut mt = Self::from_slices(element_bytes);
+//
+//         //TODO: would need a mapping of
+//     }
+//
+//     // elem - hash of price account or priceId?
+//     // for solana-merkle prove() is equivalent to
+//     // find_path(index: usize) -> Option<MerklePath>
+//     fn prove(&self, elem: &[u8]) -> Option<Self::Proof> {
+//         let idx = usize::from_be_bytes(elem.try_into().unwrap());
+//         self.find_path(idx)
+//     }
+//
+//     fn contains(&self, elem: &[u8], proof: Self::Proof) -> bool {
+//         todo!()
+//     }
+// }
+
+impl MerkleTreeOld {
     #[inline]
     fn next_level_len(level_len: usize) -> usize {
         if level_len == 1 {
@@ -122,8 +199,8 @@ impl MerkleTree {
     }
 
     pub fn from_slices<T: AsRef<[u8]>>(items: &[T]) -> Self {
-        let cap = MerkleTree::calculate_vec_capacity(items.len());
-        let mut mt = MerkleTree {
+        let cap = MerkleTreeOld::calculate_vec_capacity(items.len());
+        let mut mt = MerkleTreeOld {
             leaf_count: items.len(),
             nodes: Vec::with_capacity(cap),
             proofs: Vec::new(),
@@ -136,7 +213,7 @@ impl MerkleTree {
             mt.nodes.push(hash);
         }
 
-        let mut level_len = MerkleTree::next_level_len(items.len());
+        let mut level_len = MerkleTreeOld::next_level_len(items.len());
         let mut level_start = items.len();
         let mut prev_level_len = items.len();
         let mut prev_level_start = 0;
@@ -157,7 +234,7 @@ impl MerkleTree {
             prev_level_start = level_start;
             prev_level_len = level_len;
             level_start += level_len;
-            level_len = MerkleTree::next_level_len(level_len);
+            level_len = MerkleTreeOld::next_level_len(level_len);
         }
 
         mt
@@ -199,7 +276,7 @@ impl MerkleTree {
             node_index /= 2;
 
             level_start += level_len;
-            level_len = MerkleTree::next_level_len(level_len);
+            level_len = MerkleTreeOld::next_level_len(level_len);
         }
         Some(path)
     }

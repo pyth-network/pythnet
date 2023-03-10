@@ -16,7 +16,7 @@ use {
 };
 
 #[repr(C)]
-#[derive(Copy, Clone, Zeroable, Pod)]
+#[derive(Copy, Clone, Zeroable, Pod, Default)]
 pub struct AccountHeader {
     pub magic_number: u32,
     pub version: u32,

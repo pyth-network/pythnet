@@ -6,11 +6,7 @@ use {
     ciborium::value::Value,
     slow_primes::is_prime_miller_rabin,
     solana_merkle_tree::merkle_tree,
-    std::{
-        collections::HashSet,
-        iter::Iterator,
-        mem::size_of,
-    },
+    std::{collections::HashSet, iter::Iterator, mem::size_of},
 };
 
 trait Accumulator<'a>: Sized {
@@ -50,14 +46,11 @@ mod accumulators {
     }
 
     pub mod mul {
-        use {
-            super::hash_to_prime,
-            crate::*,
-        };
+        use {super::hash_to_prime, crate::*};
 
         pub struct MulAccumulator {
             pub accumulator: u128,
-            pub items:       Vec<u128>,
+            pub items: Vec<u128>,
         }
 
         impl<'a> Accumulator<'a> for MulAccumulator {
@@ -66,7 +59,7 @@ mod accumulators {
             fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self> {
                 let primes: Vec<u128> = items.map(|i| hash_to_prime(i)).collect();
                 Some(Self {
-                    items:       primes.clone(),
+                    items: primes.clone(),
                     accumulator: primes.into_iter().reduce(|acc, v| acc * v)?,
                 })
             }
@@ -86,10 +79,7 @@ mod accumulators {
     pub mod merkle {
         use {
             crate::*,
-            solana_merkle_tree::{
-                merkle_tree::Proof,
-                MerkleTree,
-            },
+            solana_merkle_tree::{merkle_tree::Proof, MerkleTree},
             solana_sdk::hash::hashv,
         };
 
@@ -101,7 +91,7 @@ mod accumulators {
 
         pub struct MerkleAccumulator<'a> {
             pub accumulator: MerkleTree,
-            pub items:       Vec<&'a [u8]>,
+            pub items: Vec<&'a [u8]>,
         }
 
         impl<'a> Accumulator<'a> for MerkleAccumulator<'a> {
@@ -131,35 +121,32 @@ mod accumulators {
 
 #[derive(Default, Debug, serde::Serialize, serde::Deserialize)]
 struct PriceAccount {
-    pub id:         u64,
-    pub price:      u64,
+    pub id: u64,
+    pub price: u64,
     pub price_expo: u64,
-    pub ema:        u64,
-    pub ema_expo:   u64,
+    pub ema: u64,
+    pub ema_expo: u64,
 }
 
 #[derive(Default, Debug, serde::Serialize, serde::Deserialize)]
 struct PriceOnly {
     pub price_expo: u64,
-    pub price:      u64,
-    pub id:         u64,
+    pub price: u64,
+    pub id: u64,
 }
 
 impl From<PriceAccount> for PriceOnly {
     fn from(other: PriceAccount) -> Self {
         Self {
-            id:         other.id,
-            price:      other.price,
+            id: other.id,
+            price: other.price,
             price_expo: other.price_expo,
         }
     }
 }
 
 fn main() {
-    use accumulators::{
-        merkle::MerkleAccumulator,
-        mul::MulAccumulator,
-    };
+    use accumulators::{merkle::MerkleAccumulator, mul::MulAccumulator};
 
     let mut set: HashSet<&[u8]> = HashSet::new();
 
@@ -204,11 +191,11 @@ fn main() {
 
     // Serialize with cborium into a Value. We can dynamically drop fields from this.
     let price = PriceAccount {
-        id:         1283,
-        price:      1288,
+        id: 1283,
+        price: 1288,
         price_expo: 8,
-        ema:        1288,
-        ema_expo:   8,
+        ema: 1288,
+        ema_expo: 8,
     };
 
     println!("Before: {:?}", price);
