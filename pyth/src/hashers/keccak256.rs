@@ -1,6 +1,6 @@
 use crate::hashers::Hasher;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct Keccak256Hasher {}
 
 impl Hasher for Keccak256Hasher {

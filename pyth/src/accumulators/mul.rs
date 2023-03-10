@@ -16,9 +16,9 @@ impl<'a> Accumulator<'a> for MulAccumulator<PrimeHasher> {
         Some(self.accumulator / bytes as u128)
     }
 
-    fn verify(&self, proof: Self::Proof, item: &[u8]) -> Option<bool> {
+    fn verify(&self, proof: Self::Proof, item: &[u8]) -> bool {
         let bytes = PrimeHasher::hashv(&[item]);
-        Some(proof * bytes as u128 == self.accumulator)
+        proof * bytes as u128 == self.accumulator
     }
 
     fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self> {
@@ -60,8 +60,8 @@ mod test {
             println!("Mul:");
             println!("Proof:  {:?}", accumulator.verify(proof, &item_a));
             println!("Proof:  {:?}", accumulator.verify(proof, &item_d));
-            assert!(accumulator.verify(proof, &item_a).unwrap());
-            assert_ne!(true, accumulator.verify(proof, &item_d).unwrap());
+            assert!(accumulator.verify(proof, &item_a));
+            assert!(!accumulator.verify(proof, &item_d));
         }
     }
 }

@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 pub mod keccak256;
 pub mod prime;
 
@@ -82,7 +84,7 @@ impl<H: Hasher, T: AsRef<[u8]>> Hashable<H> for T {
 ///     }
 /// }
 /// ```
-pub trait Hasher: Clone + Default {
+pub trait Hasher: Clone + Default + Debug {
     /// This type is used as a hash type in the library.
     /// It is recommended to use fixed size u8 array as a hash type. For example,
     /// for sha256 the type would be `[u8; 32]`, representing 32 bytes,
@@ -98,7 +100,7 @@ pub trait Hasher: Clone + Default {
     /// `Default` is required to be able to create a default hash
     // TODO: use Digest trait from digest crate?
     // type Hash: Copy + PartialEq + Into<Vec<u8>> + TryFrom<Vec<u8>> + Default;
-    type Hash: Copy + PartialEq + Default + borsh::BorshSerialize + Eq + Default;
+    type Hash: Copy + PartialEq + Default + borsh::BorshSerialize + Eq + Default + Debug;
     // fn hash(data: &[u8]) -> Self::Hash;
     fn hashv(data: &[&[u8]]) -> Self::Hash;
 }

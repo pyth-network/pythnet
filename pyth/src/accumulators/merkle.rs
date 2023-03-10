@@ -47,15 +47,15 @@ pub struct MerkleTree<H: Hasher> {
     pub nodes: Vec<H::Hash>,
 }
 
-pub struct MerkleAccumulator<'a, H: Hasher> {
+pub struct MerkleAccumulator<'a, H: Hasher = Keccak256Hasher> {
     pub accumulator: MerkleTree<H>,
     pub items: Vec<&'a [u8]>,
 }
 
-impl<'a> Accumulator<'a> for MerkleAccumulator<'a, Keccak256Hasher> {
+impl<'a, H: Hasher + 'a> Accumulator<'a> for MerkleAccumulator<'a, H> {
     // MerklePath
     // type Proof = Proof<'a>;
-    type Proof = MerklePath<Keccak256Hasher>;
+    type Proof = MerklePath<H>;
 
     fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self> {
         let items: Vec<&[u8]> = items.copied().collect();
@@ -71,9 +71,9 @@ impl<'a> Accumulator<'a> for MerkleAccumulator<'a, Keccak256Hasher> {
         self.accumulator.find_path(index)
     }
 
-    fn verify(&'a self, proof: Self::Proof, item: &[u8]) -> Option<bool> {
-        let item = hash_leaf!(Keccak256Hasher, item);
-        Some(proof.verify(item))
+    fn verify(&'a self, proof: Self::Proof, item: &[u8]) -> bool {
+        let item = hash_leaf!(H, item);
+        proof.verify(item)
     }
 }
 
@@ -197,7 +197,7 @@ impl<H: Hasher> MerkleTree<H> {
     }
 }
 
-#[derive(Clone, Default, PartialEq, Eq, BorshSerialize)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize)]
 pub struct MerklePath<H: Hasher>(Vec<MerkleNode<H>>);
 
 impl<H: Hasher> MerklePath<H> {
@@ -251,5 +251,74 @@ impl<H: Hasher> PriceProofs<H> {
         let mut price_proofs = price_proofs.to_vec();
         price_proofs.sort_by(|(a, _), (b, _)| a.cmp(b));
         Self(price_proofs)
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::mem::size_of;
+    #[derive(Default, Clone, Debug, borsh::BorshSerialize)]
+    struct PriceAccount {
+        pub id: u64,
+        pub price: u64,
+        pub price_expo: u64,
+        pub ema: u64,
+        pub ema_expo: u64,
+    }
+
+    #[derive(Default, Debug, borsh::BorshSerialize)]
+    struct PriceOnly {
+        pub price_expo: u64,
+        pub price: u64,
+        pub id: u64,
+    }
+
+    impl From<PriceAccount> for PriceOnly {
+        fn from(other: PriceAccount) -> Self {
+            Self {
+                id: other.id,
+                price: other.price,
+                price_expo: other.price_expo,
+            }
+        }
+    }
+
+    #[test]
+    fn test_merkle() {
+        let mut set: HashSet<&[u8]> = HashSet::new();
+
+        // Create some random elements (converted to bytes). All accumulators store arbitrary bytes so
+        // that we can target any account (or subset of accounts).
+        let price_account_a = PriceAccount {
+            id: 1,
+            price: 100,
+            price_expo: 2,
+            ema: 50,
+            ema_expo: 1,
+        };
+        let item_a = borsh::BorshSerialize::try_to_vec(&price_account_a).unwrap();
+
+        let mut price_only_b = PriceOnly::from(price_account_a.clone());
+        price_only_b.price = 200;
+        let item_b = BorshSerialize::try_to_vec(&price_only_b).unwrap();
+        let item_c = 2usize.to_be_bytes();
+        let item_d = 88usize.to_be_bytes();
+
+        // Insert the bytes into the Accumulate type.
+        set.insert(&item_a);
+        set.insert(&item_b);
+        set.insert(&item_c);
+
+        let accumulator = MerkleAccumulator::<'_, Keccak256Hasher>::from_set(set.iter()).unwrap();
+        println!("Merkle:");
+        let proof = accumulator.prove(&item_a).unwrap();
+        println!("Proof:  {:02X?}", proof);
+        assert!(accumulator.verify(proof, &item_a));
+        // println!("Valid:  {:?}", accumulator.verify(proof, &item_a));
+        let proof = accumulator.prove(&item_a).unwrap();
+        // println!("Fails:  {:?}", accumulator.verify(proof, &item_d));
+        // println!("Size:   {:?}", size_of::<merkle_tree::Proof>());
+        assert!(!accumulator.verify(proof, &item_d));
     }
 }
