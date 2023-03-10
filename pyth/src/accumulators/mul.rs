@@ -12,17 +12,17 @@ impl<'a> Accumulator<'a> for MulAccumulator<PrimeHasher> {
     type Proof = <PrimeHasher as Hasher>::Hash;
 
     fn prove(&self, item: &[u8]) -> Option<Self::Proof> {
-        let bytes = PrimeHasher::hash(item);
+        let bytes = PrimeHasher::hashv(&[item]);
         Some(self.accumulator / bytes as u128)
     }
 
     fn verify(&self, proof: Self::Proof, item: &[u8]) -> Option<bool> {
-        let bytes = PrimeHasher::hash(item);
+        let bytes = PrimeHasher::hashv(&[item]);
         Some(proof * bytes as u128 == self.accumulator)
     }
 
     fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self> {
-        let primes: Vec<u128> = items.map(|i| PrimeHasher::hash(i)).collect();
+        let primes: Vec<u128> = items.map(|i| PrimeHasher::hashv(&[i])).collect();
         Some(Self {
             items: primes.clone(),
             accumulator: primes.into_iter().reduce(|acc, v| acc * v)?,

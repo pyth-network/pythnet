@@ -17,18 +17,6 @@ use {
 const LEAF_PREFIX: &[u8] = &[0];
 const INTERMEDIATE_PREFIX: &[u8] = &[1];
 
-// Implement a function that takes a list of byte slices, and hashes them all using sha3 Keccak.
-// TODO: do we still want to switch to keccak256/sha3?
-// original costs/benchmarks from hackmd page were using sha2
-fn hashv(data: &[&[u8]]) -> Hash {
-    use sha3::{Digest, Keccak256};
-    let mut hasher = Keccak256::new();
-    for d in data {
-        hasher.update(d);
-    }
-    hasher.finalize().into()
-}
-
 macro_rules! hash_leaf {
     {$x:ty, $d:ident} => {
         <$x as Hasher>::hashv(&[LEAF_PREFIX, $d])

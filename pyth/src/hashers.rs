@@ -54,7 +54,7 @@ pub trait Hashable<H: Hasher> {
 //Blank implementation for Hashable for any type that implements AsRef<[u8]>
 impl<H: Hasher, T: AsRef<[u8]>> Hashable<H> for T {
     fn to_hash(&self) -> H::Hash {
-        <H as Hasher>::hash(self.as_ref())
+        <H as Hasher>::hashv(&[self.as_ref()])
     }
 }
 
@@ -96,10 +96,9 @@ pub trait Hasher: Clone + Default {
     /// `Into<Vec<u8>>` is required to be able to serialize proof
     /// `TryFrom<Vec<u8>>` is required to parse hashes from a serialized proof
     /// `Default` is required to be able to create a default hash
+    // TODO: use Digest trait from digest crate?
     // type Hash: Copy + PartialEq + Into<Vec<u8>> + TryFrom<Vec<u8>> + Default;
     type Hash: Copy + PartialEq + Default + borsh::BorshSerialize + Eq + Default;
     // fn hash(data: &[u8]) -> Self::Hash;
-    fn hash(data: &[u8]) -> Self::Hash;
-
     fn hashv(data: &[&[u8]]) -> Self::Hash;
 }
