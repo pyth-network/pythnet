@@ -35,7 +35,7 @@ mul:
 
  */
 
-trait Accumulator<'a>: Sized {
+pub trait Accumulator<'a>: Sized {
     type Proof: 'a;
     fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self>;
     fn prove(&'a self, item: &[u8]) -> Option<Self::Proof>;

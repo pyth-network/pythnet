@@ -1,3 +1,4 @@
+use std::cell::Ref;
 use {
     crate::RawPubkey,
     borsh::{BorshDeserialize, BorshSerialize},
@@ -16,7 +17,7 @@ use {
 };
 
 #[repr(C)]
-#[derive(Copy, Clone, Zeroable, Pod, Default)]
+#[derive(Copy, Clone, Zeroable, Pod, Default, BorshSerialize)]
 pub struct AccountHeader {
     pub magic_number: u32,
     pub version: u32,
@@ -189,6 +190,36 @@ pub fn load<T: Pod>(data: &[u8]) -> &T {
 pub fn load_as_option<T: Pod>(data: &[u8]) -> Option<&T> {
     data.get(0..size_of::<T>())
         .map(|data| try_from_bytes(data).unwrap())
+}
+
+pub fn check<T: PythAccount>(account_data: &[u8]) -> bool {
+    if account_data.len() < T::MINIMUM_SIZE {
+        return false;
+    }
+
+    let account_header = load::<AccountHeader>(account_data);
+    if account_header.magic_number != PC_MAGIC
+        || account_header.version != PC_VERSION
+        || account_header.account_type != T::ACCOUNT_TYPE
+    {
+        return false;
+    }
+
+    true
+}
+
+pub fn load_account<'a, T: Pod>(data: &'a [u8]) -> Option<&'a T> {
+    // let data = account.try_borrow_mut_data()?;
+
+    bytemuck::try_from_bytes(&data[0..size_of::<T>()]).ok()
+}
+
+pub fn load_checked<'a, T: PythAccount>(account_data: &'a [u8], _version: u32) -> Option<&'a T> {
+    if !check::<T>(account_data) {
+        return None;
+    }
+
+    load_account::<T>(account_data)
 }
 
 /// Precedes every message implementing the p2w serialization format

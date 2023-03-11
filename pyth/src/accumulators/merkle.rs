@@ -2,11 +2,11 @@
 
 use crate::accumulators::Accumulator;
 use crate::hashers::keccak256::Keccak256Hasher;
-use crate::hashers::{Hashable, Hasher};
+use crate::hashers::Hasher;
 use std::collections::HashSet;
 use {
     crate::pyth::PriceAccount,
-    crate::{AccumulatorPrice, Hash, PriceId},
+    crate::{Hash, PriceId},
     borsh::{BorshDeserialize, BorshSerialize},
     serde::{Deserialize, Serialize},
 };
@@ -33,17 +33,9 @@ macro_rules! hash_intermediate {
 /// solana-merkle-tree. This modifies the structure slightly to be serialization friendly, and to
 /// make verification cheaper on EVM based networks.
 #[derive(
-    Debug,
-    Clone,
-    PartialEq,
-    Eq,
-    BorshSerialize,
-    BorshDeserialize,
-    /* Serialize, */
-    /*Deserialize,*/
-    Default,
+    Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, Default,
 )]
-pub struct MerkleTree<H: Hasher> {
+pub struct MerkleTree<H: Hasher = Keccak256Hasher> {
     pub leaf_count: usize,
     pub nodes: Vec<H::Hash>,
 }
@@ -198,7 +190,7 @@ impl<H: Hasher> MerkleTree<H> {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, Serialize)]
 pub struct MerklePath<H: Hasher>(Vec<MerkleNode<H>>);
 
 impl<H: Hasher> MerklePath<H> {
@@ -222,7 +214,7 @@ impl<H: Hasher> MerklePath<H> {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, Serialize)]
 pub struct MerkleNode<H: Hasher>(H::Hash, Option<H::Hash>, Option<H::Hash>);
 
 impl<'a, H: Hasher> MerkleNode<H> {
@@ -244,7 +236,7 @@ impl<'a, H: Hasher> MerkleNode<H> {
 //  also double check alignment in conjunction with `AccumulatorPrice`
 // #[repr(transparent)]
 #[repr(C)]
-#[derive(BorshSerialize, PartialEq, Eq, Default)]
+#[derive(Serialize, BorshSerialize, PartialEq, Eq, Default)]
 pub struct PriceProofs<H: Hasher>(Vec<(PriceId, MerklePath<H>)>);
 
 impl<H: Hasher> PriceProofs<H> {

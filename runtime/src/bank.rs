@@ -36,6 +36,7 @@
 #[allow(deprecated)]
 use solana_sdk::recent_blockhashes_account;
 pub use solana_sdk::reward_type::RewardType;
+use std::io::Read;
 use {
     crate::{
         account_overrides::AccountOverrides,
@@ -2318,7 +2319,7 @@ impl Bank {
 
     pub fn accumulator(
         &self,
-    ) -> sysvar::accumulator::MerkleTree<solana_pyth::hashers::Keccak256Hasher> {
+    ) -> sysvar::accumulator::MerkleTree<solana_pyth::hashers::keccak256::Keccak256Hasher> {
         from_account(
             &self
                 .get_account(&sysvar::accumulator::id())
@@ -2327,10 +2328,61 @@ impl Bank {
         .unwrap_or_default()
     }
 
-    fn update_accumulator(&self) {
-        use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs};
-        use solana_pyth::pyth::load;
+    fn get_price_accounts(&self) -> (Vec<Pubkey>, Vec<AccountSharedData>) {
+        use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs, Accumulator};
+        use solana_pyth::hashers::keccak256::Keccak256Hasher;
         use solana_pyth::pyth::PriceAccount;
+        use solana_pyth::pyth::{check, load, load_checked};
+        use solana_pyth::wormhole::AccumulatorSequenceTracker;
+        use solana_sdk::borsh;
+        use solana_sdk::pyth::{
+            price_proofs::create_account as create_price_proof_account,
+            wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
+            PYTH_PID,
+        };
+        let (price_feed_ids, measure) = measure!(self.get_price_feeds());
+        info!(
+            "[get_price_feeds] len: {}. get_price_feed_ids_in_ms: {}",
+            price_feed_ids.len(),
+            measure.as_ms()
+        );
+        // info!("price_feed_ids: {:?}", &price_feed_ids[0..3]);
+        let (price_feed_accts, measure) = measure!(price_feed_ids
+            .into_iter()
+            .filter_map(
+                |pf| if let Some(ai) = self.get_account_with_fixed_root(&pf) {
+                    Some((pf, ai))
+                } else {
+                    None
+                }
+            )
+            .collect::<Vec<_>>());
+        info!(
+            "[get_price_feed_accts] len: {} ms: {}",
+            price_feed_accts.len(),
+            measure.as_ms()
+        );
+
+        price_feed_accts
+            .into_iter()
+            .filter_map(|(pk, ai)| {
+                if let Some(&pa) = load_checked::<PriceAccount>(ai.data(), 0) {
+                    Some((pk, ai))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|(pk, ai)| (pk, ai))
+            .unzip()
+    }
+
+    fn update_accumulator(&self) {
+        use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs, Accumulator};
+        use solana_pyth::hashers::keccak256::Keccak256Hasher;
+        use solana_pyth::pyth::PriceAccount;
+        use solana_pyth::pyth::{check, load, load_checked};
         use solana_pyth::wormhole::AccumulatorSequenceTracker;
         use solana_sdk::borsh;
         use solana_sdk::pyth::{
@@ -2363,45 +2415,35 @@ impl Bank {
             &WORMHOLE_PID,
         );
 
+        let (price_feed_ids, price_feed_accts) = self.get_price_accounts();
+        let input = price_feed_accts
+            .iter()
+            .map(|a| a.data())
+            .collect::<Vec<&[u8]>>();
+        let acc =
+            solana_pyth::accumulators::merkle::MerkleAccumulator::from_set(input.iter()).unwrap();
+
+        // let acc = self.create_accumulator(&price_feed_accts);
+
         self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
-            let price_feed_ids = self.get_price_feeds();
-            info!("price_feed_ids: {:?}", &price_feed_ids[0..3]);
-            let price_feed_accts: Vec<AccountSharedData> = price_feed_ids
-                .iter()
-                .filter_map(|pf| self.get_account_with_fixed_root(pf))
-                .collect();
+            //TODO: fix these
+            // new(price_proofs: &[(PriceId, MerklePath<H>)])
+            // let price_proofs = PriceProofs::new(&acc.proof());
+            //
+            // let price_proof_len = bincode::serialized_size(&price_proofs).unwrap() as usize;
+            // let new_proof_account = create_price_proof_account(
+            //     &price_proofs,
+            //     price_proof_len,
+            //     self.get_minimum_balance_for_rent_exemption(price_proof_len),
+            //     &WORMHOLE_PID,
+            // );
+            // self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
 
-            // TODO: .map_filter(verify::<PriceAccount>(ai.data()))
-            // note - load only checks length/alignment not actual content of bytes
-            let price_feed_accts = price_feed_accts
-                .iter()
-                .map(|ai| load::<PriceAccount>(ai.data()))
-                .collect::<Vec<&PriceAccount>>();
-
-            // let (acc, proof) = solana_pyth::accumulators::merkle::MerkleTree::new(zip(
-            //     price_feed_ids,
-            //     price_feed_accts,
-            // ));
-
-            let acc = solana_pyth::accumulators::merkle::MerkleTree::new_merkle(zip(
-                price_feed_ids.into_iter().map(|pf| pf.to_bytes()),
-                price_feed_accts,
-            ));
-            let price_proofs = PriceProofs::new(&acc.proof());
-
-            let price_proof_len = bincode::serialized_size(&price_proofs).unwrap() as usize;
-            let new_proof_account = create_price_proof_account(
-                &price_proofs,
-                price_proof_len,
-                self.get_minimum_balance_for_rent_exemption(price_proof_len),
-                &WORMHOLE_PID,
-            );
-            self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
-
-            // TODO: do we even need an accumulator sysvar?
-            create_account::<sysvar::accumulator::MerkleTree<solana_pyth::hashers::Keccak256Hasher>>(
+            // TODO: do we need to have enums/something in header/VAA to determine
+            // which type of Accumulator & Hasher that's used?
+            create_account::<sysvar::accumulator::MerkleTree<Keccak256Hasher>>(
                 //TODO: MerkleTree sysvar serialize
-                &acc,
+                &acc.accumulator,
                 self.inherit_specially_retained_account_fields(account),
             )
         });
@@ -2409,7 +2451,8 @@ impl Bank {
         info!("update_accumulator proof_pda: {}", proof_pda);
 
         // Store generated VAA for Wormhole to relay.
-        self.post_accumulator_attestation();
+        let (_, measure) = measure!(self.post_accumulator_attestation(acc));
+        info!("[post_accumulator_attestation] ms: {}", measure.as_ms());
     }
 
     // create VAA
@@ -2421,7 +2464,10 @@ impl Bank {
     //
     // we could also literally send the ring buffer index in the message
     // (as opposed to an incrementing count that has to get modded)
-    fn post_accumulator_attestation(&self) {
+    fn post_accumulator_attestation(
+        &self,
+        acc: solana_pyth::accumulators::merkle::MerkleAccumulator,
+    ) {
         use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs};
         use solana_pyth::pyth::load;
         use solana_pyth::pyth::PriceAccount;
@@ -2435,19 +2481,18 @@ impl Bank {
         let clock = self.clock();
         let ring_buffer_idx = clock.slot % 100;
 
+        // let a = acc.accumulator.get_root().unwrap().to_vec();
         let accumulator_attestation = solana_pyth::AccumulatorAttestation {
             // accumulator: self.accumulator().get_root().unwrap(),
-            accumulator: self.accumulator().root,
+            accumulator: acc.accumulator.get_root().unwrap().to_vec(),
             ring_buffer_idx,
             height: clock.slot,
             timestamp: clock.unix_timestamp,
         };
-        info!("accumulator_pda: {accumulator_message_pda:?}");
+        // info!("accumulator_pda: {accumulator_message_pda:?}");
 
         let mut seq_acct = match self.get_account_with_fixed_root(&ACCUMULATOR_SEQUENCE_ADDR) {
-            Some(mut account) => {
-                solana_sdk::borsh::try_from_slice_unchecked(account.data()).unwrap()
-            }
+            Some(account) => solana_sdk::borsh::try_from_slice_unchecked(account.data()).unwrap(),
             None => AccumulatorSequenceTracker::default(),
         };
         info!("sequence: {:?}", seq_acct.sequence);

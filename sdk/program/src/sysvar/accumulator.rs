@@ -53,6 +53,7 @@ pub use solana_pyth::accumulators::merkle::MerkleTree;
 
 crate::declare_sysvar_id!("SysvarAccumu1ator11111111111111111111111111", MerkleTree);
 
+//TODO: impl Sysvar for Accumulator?
 impl Sysvar for MerkleTree {
     //TODO: is this needed? do we ever need to use the accumulator sysvar in a contract?
     // impl_sysvar_get!(sol_get_accumulator_sysvar);

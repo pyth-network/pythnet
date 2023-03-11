@@ -3,7 +3,7 @@ use {
     sha3::{Digest, Sha3_256},
     slow_primes::is_prime_miller_rabin,
 };
-#[derive(Clone, Default, Debug)]
+#[derive(Clone, Default, Debug, serde::Serialize)]
 pub struct PrimeHasher {}
 
 impl Hasher for PrimeHasher {

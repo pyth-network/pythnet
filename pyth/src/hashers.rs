@@ -49,16 +49,16 @@ pub mod prime;
 ///     }
 /// }
 /// ```
-pub trait Hashable<H: Hasher> {
-    fn to_hash(&self) -> H::Hash;
-}
-
-//Blank implementation for Hashable for any type that implements AsRef<[u8]>
-impl<H: Hasher, T: AsRef<[u8]>> Hashable<H> for T {
-    fn to_hash(&self) -> H::Hash {
-        <H as Hasher>::hashv(&[self.as_ref()])
-    }
-}
+// pub trait Hashable<H: Hasher> {
+//     fn to_hash(&self) -> H::Hash;
+// }
+//
+// //Blank implementation for Hashable for any type that implements AsRef<[u8]>
+// impl<H: Hasher, T: AsRef<[u8]>> Hashable<H> for T {
+//     fn to_hash(&self) -> H::Hash {
+//         <H as Hasher>::hashv(&[self.as_ref()])
+//     }
+// }
 
 /// Hasher is a trait used to provide a hashing algorithm for the library.
 ///
@@ -84,7 +84,7 @@ impl<H: Hasher, T: AsRef<[u8]>> Hashable<H> for T {
 ///     }
 /// }
 /// ```
-pub trait Hasher: Clone + Default + Debug {
+pub trait Hasher: Clone + Default + Debug + serde::Serialize {
     /// This type is used as a hash type in the library.
     /// It is recommended to use fixed size u8 array as a hash type. For example,
     /// for sha256 the type would be `[u8; 32]`, representing 32 bytes,
@@ -100,7 +100,15 @@ pub trait Hasher: Clone + Default + Debug {
     /// `Default` is required to be able to create a default hash
     // TODO: use Digest trait from digest crate?
     // type Hash: Copy + PartialEq + Into<Vec<u8>> + TryFrom<Vec<u8>> + Default;
-    type Hash: Copy + PartialEq + Default + borsh::BorshSerialize + Eq + Default + Debug;
+    type Hash: Copy
+        + PartialEq
+        + Default
+        + borsh::BorshSerialize
+        + Eq
+        + Default
+        + Debug
+        + serde::Serialize
+        + for<'a> serde::de::Deserialize<'a>;
     // fn hash(data: &[u8]) -> Self::Hash;
     fn hashv(data: &[&[u8]]) -> Self::Hash;
 }
