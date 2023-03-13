@@ -186,7 +186,6 @@ impl<H: Hasher> MerkleTree<H> {
     }
 }
 
-// #[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, Serialize)]
 #[derive(Clone, Default, Debug, PartialEq, Eq, Serialize)]
 pub struct MerklePath<H: Hasher>(Vec<MerkleNode<H>>);
 
@@ -211,7 +210,6 @@ impl<H: Hasher> MerklePath<H> {
     }
 }
 
-// #[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, Serialize)]
 #[derive(Clone, Default, Debug, PartialEq, Eq, Serialize)]
 pub struct MerkleNode<H: Hasher>(H::Hash, Option<H::Hash>, Option<H::Hash>);
 

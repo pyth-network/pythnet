@@ -7,7 +7,6 @@ use {
 pub struct PrimeHasher {}
 
 impl Hasher for PrimeHasher {
-    // type Hash = u128;
     type Hash = [u8; 16];
 
     fn hashv<T: AsRef<[u8]>>(data: &[T]) -> [u8; 16] {
