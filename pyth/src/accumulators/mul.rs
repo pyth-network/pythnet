@@ -12,20 +12,24 @@ impl<'a> Accumulator<'a> for MulAccumulator<PrimeHasher> {
     type Proof = <PrimeHasher as Hasher>::Hash;
 
     fn prove(&self, item: &[u8]) -> Option<Self::Proof> {
-        let bytes = PrimeHasher::hashv(&[item]);
-        Some(self.accumulator / bytes as u128)
+        let bytes = u128::from_be_bytes(PrimeHasher::hashv(&[item]));
+        let acc = u128::from_be_bytes(self.accumulator);
+        Some((acc / bytes as u128).to_be_bytes())
     }
 
     fn verify(&self, proof: Self::Proof, item: &[u8]) -> bool {
-        let bytes = PrimeHasher::hashv(&[item]);
-        proof * bytes as u128 == self.accumulator
+        let bytes = u128::from_be_bytes(PrimeHasher::hashv(&[item]));
+        let proof = u128::from_be_bytes(proof);
+        proof * bytes as u128 == u128::from_be_bytes(self.accumulator)
     }
 
     fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self> {
-        let primes: Vec<u128> = items.map(|i| PrimeHasher::hashv(&[i])).collect();
+        let primes: Vec<[u8; 16]> = items.map(|i| PrimeHasher::hashv(&[i])).collect();
         Some(Self {
             items: primes.clone(),
-            accumulator: primes.into_iter().reduce(|acc, v| acc * v)?,
+            accumulator: primes.into_iter().reduce(|acc, v| {
+                u128::to_be_bytes(u128::from_be_bytes(acc) * u128::from_be_bytes(v))
+            })?,
         })
     }
 }

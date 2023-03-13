@@ -123,17 +123,13 @@ impl<H: Hasher> MerkleTree<H> {
         while level_len > 0 {
             for i in 0..level_len {
                 let prev_level_idx = 2 * i;
-                let lsib =
-                    borsh::BorshSerialize::try_to_vec(&mt.nodes[prev_level_start + prev_level_idx])
-                        .unwrap();
-                let rsib = {
-                    let rsib = if prev_level_idx + 1 < prev_level_len {
-                        mt.nodes[prev_level_start + prev_level_idx + 1]
-                    } else {
-                        // Duplicate last entry if the level length is odd
-                        mt.nodes[prev_level_start + prev_level_idx]
-                    };
-                    borsh::BorshSerialize::try_to_vec(&rsib).unwrap()
+
+                let lsib: &H::Hash = &mt.nodes[prev_level_start + prev_level_idx];
+                let rsib: &H::Hash = if prev_level_idx + 1 < prev_level_len {
+                    &mt.nodes[prev_level_start + prev_level_idx + 1]
+                } else {
+                    // Duplicate last entry if the level length is odd
+                    &mt.nodes[prev_level_start + prev_level_idx]
                 };
 
                 let hash = hash_intermediate!(H, lsib, rsib);
@@ -190,7 +186,8 @@ impl<H: Hasher> MerkleTree<H> {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, Serialize)]
+// #[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, Serialize)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, Serialize)]
 pub struct MerklePath<H: Hasher>(Vec<MerkleNode<H>>);
 
 impl<H: Hasher> MerklePath<H> {
@@ -200,8 +197,8 @@ impl<H: Hasher> MerklePath<H> {
 
     pub fn verify(&self, candidate: H::Hash) -> bool {
         let result = self.0.iter().try_fold(candidate, |candidate, pe| {
-            let lsib = borsh::BorshSerialize::try_to_vec(&pe.1.unwrap_or(candidate)).unwrap();
-            let rsib = borsh::BorshSerialize::try_to_vec(&pe.2.unwrap_or(candidate)).unwrap();
+            let lsib = &pe.1.unwrap_or(candidate);
+            let rsib = &pe.1.unwrap_or(candidate);
             let hash = hash_intermediate!(H, lsib, rsib);
 
             if hash == pe.0 {
@@ -214,7 +211,8 @@ impl<H: Hasher> MerklePath<H> {
     }
 }
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, Serialize)]
+// #[derive(Clone, Default, Debug, PartialEq, Eq, BorshSerialize, Serialize)]
+#[derive(Clone, Default, Debug, PartialEq, Eq, Serialize)]
 pub struct MerkleNode<H: Hasher>(H::Hash, Option<H::Hash>, Option<H::Hash>);
 
 impl<'a, H: Hasher> MerkleNode<H> {
@@ -234,9 +232,8 @@ impl<'a, H: Hasher> MerkleNode<H> {
 
 //TODO: newtype or type alias?
 //  also double check alignment in conjunction with `AccumulatorPrice`
-// #[repr(transparent)]
-#[repr(C)]
-#[derive(Serialize, BorshSerialize, PartialEq, Eq, Default)]
+// #[repr(transparent)
+#[derive(Serialize, PartialEq, Eq, Default)]
 pub struct PriceProofs<H: Hasher>(Vec<(PriceId, MerklePath<H>)>);
 
 impl<H: Hasher> PriceProofs<H> {

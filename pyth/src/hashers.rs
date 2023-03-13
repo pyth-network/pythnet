@@ -103,12 +103,13 @@ pub trait Hasher: Clone + Default + Debug + serde::Serialize {
     type Hash: Copy
         + PartialEq
         + Default
-        + borsh::BorshSerialize
         + Eq
         + Default
         + Debug
+        + AsRef<[u8]>
         + serde::Serialize
         + for<'a> serde::de::Deserialize<'a>;
     // fn hash(data: &[u8]) -> Self::Hash;
-    fn hashv(data: &[&[u8]]) -> Self::Hash;
+    // fn hashv(data: &[&[u8]]) -> Self::Hash;
+    fn hashv<T: AsRef<[u8]>>(data: &[T]) -> Self::Hash;
 }
