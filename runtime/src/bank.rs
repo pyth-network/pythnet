@@ -2423,21 +2423,24 @@ impl Bank {
         let acc =
             solana_pyth::accumulators::merkle::MerkleAccumulator::from_set(input.iter()).unwrap();
 
-        // let acc = self.create_accumulator(&price_feed_accts);
-
         self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
-            //TODO: fix these
-            // new(price_proofs: &[(PriceId, MerklePath<H>)])
-            // let price_proofs = PriceProofs::new(&acc.proof());
-            //
-            // let price_proof_len = bincode::serialized_size(&price_proofs).unwrap() as usize;
-            // let new_proof_account = create_price_proof_account(
-            //     &price_proofs,
-            //     price_proof_len,
-            //     self.get_minimum_balance_for_rent_exemption(price_proof_len),
-            //     &WORMHOLE_PID,
-            // );
-            // self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
+            let proofs = acc
+                .items
+                .iter()
+                .map(|i| acc.prove(i).unwrap())
+                .collect::<Vec<_>>();
+            let price_proof_input =
+                zip(price_feed_ids.iter().map(|pk| pk.to_bytes()), proofs).collect::<Vec<_>>();
+            let price_proofs = PriceProofs::new(price_proof_input.as_slice());
+
+            let price_proof_len = bincode::serialized_size(&price_proofs).unwrap() as usize;
+            let new_proof_account = create_price_proof_account(
+                &price_proofs,
+                price_proof_len,
+                self.get_minimum_balance_for_rent_exemption(price_proof_len),
+                &WORMHOLE_PID,
+            );
+            self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
 
             // TODO: do we need to have enums/something in header/VAA to determine
             // which type of Accumulator & Hasher that's used?
