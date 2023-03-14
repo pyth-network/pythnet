@@ -66,7 +66,7 @@ impl<'a, H: Hasher + 'a> Accumulator<'a> for MerkleAccumulator<'a, H> {
 
     fn verify(&'a self, proof: Self::Proof, item: &[u8]) -> bool {
         let item = hash_leaf!(H, item);
-        proof.verify(item)
+        proof.validate(item)
     }
 }
 
@@ -194,7 +194,7 @@ impl<H: Hasher> MerklePath<H> {
         self.0.push(entry)
     }
 
-    pub fn verify(&self, candidate: H::Hash) -> bool {
+    pub fn validate(&self, candidate: H::Hash) -> bool {
         let result = self.0.iter().try_fold(candidate, |candidate, pe| {
             let lsib = &pe.1.unwrap_or(candidate);
             let rsib = &pe.2.unwrap_or(candidate);
