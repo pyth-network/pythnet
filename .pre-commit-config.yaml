@@ -30,31 +30,42 @@ repos:
         entry: cargo +nightly clippy --manifest-path ./pyth/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings
         pass_filenames: false
         files: pyth
-#      # Hooks for the attester
-#      - id: cargo-fmt-attester
-#        name: Cargo format for attester
-#        language: "rust"
-#        entry: cargo +nightly fmt --manifest-path ./wormhole_attester/Cargo.toml --all -- --config-path rustfmt.toml
-#        pass_filenames: false
-#        files: wormhole_attester
-#      - id: cargo-clippy-attester
-#        name: Cargo clippy for attester
-#        language: "rust"
-#        entry: |
-#          bash -c 'EMITTER_ADDRESS=0 BRIDGE_ADDRESS=0 cargo +nightly clippy --manifest-path \
-#            ./wormhole_attester/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings'
-#        pass_filenames: false
-#        files: wormhole_attester
-#      # Hooks for cosmwasm contract
-#      - id: cargo-fmt-cosmwasm
-#        name: Cargo format for cosmwasm contract
-#        language: "rust"
-#        entry: cargo +nightly fmt --manifest-path ./target_chains/cosmwasm/Cargo.toml --all -- --config-path rustfmt.toml
-#        pass_filenames: false
-#        files: target_chains/cosmwasm
-#      - id: cargo-clippy-cosmwasm
-#        name: Cargo clippy for cosmwasm contract
-#        language: "rust"
-#        entry: cargo +nightly clippy --manifest-path ./target_chains/cosmwasm/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings
-#        pass_filenames: false
-#        files: target_chains/cosmwasm
+      # Hooks for the solana-runtime
+      - id: cargo-fmt-solana-runtime
+        name: Cargo format for solana-runtime
+        language: "rust"
+        entry: cargo +nightly fmt --manifest-path ./runtime/Cargo.toml --all -- --config-path rustfmt.toml
+        pass_filenames: false
+        files: runtime
+      - id: cargo-clippy-solana-runtime
+        name: Cargo clippy for solana-runtime
+        language: "rust"
+        entry: cargo +nightly clippy --manifest-path ./runtime/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings
+        pass_filenames: false
+        files: runtime
+      # Hooks for the solana-sdk
+      - id: cargo-fmt-solana-sdk
+        name: Cargo format for solana-sdk
+        language: "rust"
+        entry: cargo +nightly fmt --manifest-path ./sdk/Cargo.toml --all -- --config-path rustfmt.toml
+        pass_filenames: false
+        files: sdk
+      - id: cargo-clippy-solana-sdk
+        name: Cargo clippy for solana-sdk
+        language: "rust"
+        entry: cargo +nightly clippy --manifest-path ./sdk/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings
+        pass_filenames: false
+        files: sdk
+      # Hooks for solana-program
+      - id: cargo-fmt-solana-program
+        name: Cargo format for solana-program
+        language: "rust"
+        entry: cargo +nightly fmt --manifest-path ./sdk/program/Cargo.toml --all -- --config-path rustfmt.toml
+        pass_filenames: false
+        files: sdk/program
+      - id: cargo-clippy-solana-sdk
+        name: Cargo clippy for solana-sdk
+        language: "rust"
+        entry: cargo +nightly clippy --manifest-path ./sdk/program/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings
+        pass_filenames: false
+        files: sdk/program
