@@ -197,7 +197,7 @@ impl<H: Hasher> MerklePath<H> {
     pub fn verify(&self, candidate: H::Hash) -> bool {
         let result = self.0.iter().try_fold(candidate, |candidate, pe| {
             let lsib = &pe.1.unwrap_or(candidate);
-            let rsib = &pe.1.unwrap_or(candidate);
+            let rsib = &pe.2.unwrap_or(candidate);
             let hash = hash_intermediate!(H, lsib, rsib);
 
             if hash == pe.0 {

@@ -2394,26 +2394,6 @@ impl Bank {
         //TODO: ring buffer logic
         let clock = self.clock();
         let ring_buffer_idx = clock.slot % 10_000;
-        // let ring_buffer_acct = Pubkey::find_program_address(&[
-        //         "Price",
-        //         ring_buffer_idx.to_be_bytes(),
-        // ], pythnet_program);
-        // We could store all the prices in a single account containing an ordered Vec<(PriceId, PriceHash)>
-        // which means we only increase the account size by 64 bytes per price feed.
-        // It being ordered means we can quickly pull prices out with a binary search
-        // and the price service only has to request one account for each proof.
-        // We won't blow up the validator disk with hundreds of thousands of accounts this way
-
-        // TODO: store canonical proof_bump for security?
-        // should price proof pdas be owned by pyth or wormhole?
-        let (proof_pda, _proof_bump) = Pubkey::find_program_address(
-            &[
-                b"Proof",
-                &PYTH_PID.to_bytes(),
-                &ring_buffer_idx.to_be_bytes(),
-            ],
-            &WORMHOLE_PID,
-        );
 
         let (price_feed_ids, price_feed_accts) = self.get_price_accounts();
         let input = price_feed_accts
@@ -2423,7 +2403,25 @@ impl Bank {
         let acc =
             solana_pyth::accumulators::merkle::MerkleAccumulator::from_set(input.iter()).unwrap();
 
+        // TODO: store canonical proof_bump for security?
+        // We could store all the prices in a single account containing an ordered Vec<(PriceId, PriceHash)>
+        // which means we only increase the account size by 64 bytes per price feed.
+        // It being ordered means we can quickly pull prices out with a binary search
+        // and the price service only has to request one account for each proof.
+        // We won't blow up the validator disk with hundreds of thousands of accounts this way
+
+        let (proof_pda, _proof_bump) = Pubkey::find_program_address(
+            &[
+                b"Proof",
+                &PYTH_PID.to_bytes(),
+                &ring_buffer_idx.to_be_bytes(),
+            ],
+            &WORMHOLE_PID,
+        );
+
         self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
+            // TODO: need to figure out generalizing the proofs
+            // this current impl is too specific to merkle tree & full price accounts
             let proofs = acc
                 .items
                 .iter()
