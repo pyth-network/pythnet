@@ -30,7 +30,7 @@ solana-vote-program = { path = "../programs/vote", version = "=1.15.0" }
 [target."cfg(target_os = \"linux\")".dependencies]
 caps = "0.5.4"
 libc = "0.2.131"
-nix = "0.25.0"
+nix = "0.26.2"
 
 [lib]
 name = "solana_perf"
