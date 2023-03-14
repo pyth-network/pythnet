@@ -1,19 +1,8 @@
-use std::cell::Ref;
+use {crate::RawPubkey, borsh::BorshSerialize};
 use {
-    crate::RawPubkey,
-    borsh::{BorshDeserialize, BorshSerialize},
-    serde::{Deserialize, Serialize, Serializer},
-    std::{
-        fmt,
-        io::{Error, ErrorKind::InvalidData, Read, Write},
-        mem,
-        ops::DerefMut,
-    },
-};
-use {
-    bytemuck::{try_from_bytes, try_from_bytes_mut, Pod, Zeroable},
+    bytemuck::{try_from_bytes, Pod, Zeroable},
     // solana_merkle_tree::MerkleTree,
-    std::{mem::size_of, ops::Deref},
+    std::mem::size_of,
 };
 
 #[repr(C)]

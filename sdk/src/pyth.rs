@@ -15,9 +15,10 @@ pub const ACCUMULATOR_SEQUENCE_ADDR: Pubkey =
 pub const PYTH_PID: Pubkey = pubkey!("FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH");
 
 pub mod price_proofs {
-    use super::*;
-    use solana_pyth::accumulators::merkle::PriceProofs;
-    use solana_pyth::hashers::Hasher;
+    use {
+        super::*,
+        solana_pyth::{accumulators::merkle::PriceProofs, hashers::Hasher},
+    };
 
     fn to_account<H: Hasher>(
         price_proof: &PriceProofs<H>,
@@ -41,11 +42,13 @@ pub mod price_proofs {
 }
 
 pub mod wormhole {
-    use super::*;
-    use crate::account::Account;
-    use borsh::BorshSerialize;
-    use solana_pyth::wormhole::{AccumulatorSequenceTracker, PostedMessageUnreliableData};
-    use solana_sdk_macro::pubkey;
+    use {
+        super::*,
+        crate::account::Account,
+        borsh::BorshSerialize,
+        solana_pyth::wormhole::{AccumulatorSequenceTracker, PostedMessageUnreliableData},
+        solana_sdk_macro::pubkey,
+    };
 
     pub const WORMHOLE_PID: Pubkey = pubkey!("worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth");
 

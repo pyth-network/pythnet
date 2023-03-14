@@ -1,14 +1,14 @@
 // TODO: Go back to a reference based implementation ala Solana's original.
 
-use crate::accumulators::Accumulator;
-use crate::hashers::keccak256::Keccak256Hasher;
-use crate::hashers::Hasher;
-use std::collections::HashSet;
 use {
-    crate::pyth::PriceAccount,
-    crate::{Hash, PriceId},
+    crate::{
+        accumulators::Accumulator,
+        hashers::{keccak256::Keccak256Hasher, Hasher},
+        PriceId,
+    },
     borsh::{BorshDeserialize, BorshSerialize},
     serde::{Deserialize, Serialize},
+    std::collections::HashSet,
 };
 
 // We need to discern between leaf and intermediate nodes to prevent trivial second
@@ -149,11 +149,11 @@ impl<H: Hasher> MerkleTree<H> {
     }
 
     pub fn find_path(&self, index: usize) -> Option<MerklePath<H>> {
-        if index >= self.leaf_count as usize {
+        if index >= self.leaf_count {
             return None;
         }
 
-        let mut level_len = self.leaf_count as usize;
+        let mut level_len = self.leaf_count;
         let mut level_start = 0;
         let mut path = MerklePath::<H>::default();
         let mut node_index = index;
@@ -244,8 +244,7 @@ impl<H: Hasher> PriceProofs<H> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use std::mem::size_of;
+    use {super::*, std::mem::size_of};
     #[derive(Default, Clone, Debug, borsh::BorshSerialize)]
     struct PriceAccount {
         pub id: u64,
@@ -287,7 +286,7 @@ mod test {
         };
         let item_a = borsh::BorshSerialize::try_to_vec(&price_account_a).unwrap();
 
-        let mut price_only_b = PriceOnly::from(price_account_a.clone());
+        let mut price_only_b = PriceOnly::from(price_account_a);
         price_only_b.price = 200;
         let item_b = BorshSerialize::try_to_vec(&price_only_b).unwrap();
         let item_c = 2usize.to_be_bytes();
@@ -310,7 +309,7 @@ mod test {
                     Keccak256Hasher::Hash       {:?}
                     MerkleNode                  {:?}
                     MerklePath                  {:?}
-                
+
             ",
             size_of::<<MerkleAccumulator<'_> as Accumulator>::Proof>(),
             size_of::<<Keccak256Hasher as Hasher>::Hash>(),

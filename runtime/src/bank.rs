@@ -36,7 +36,6 @@
 #[allow(deprecated)]
 use solana_sdk::recent_blockhashes_account;
 pub use solana_sdk::reward_type::RewardType;
-use std::io::Read;
 use {
     crate::{
         account_overrides::AccountOverrides,
@@ -167,6 +166,7 @@ use {
         collections::{HashMap, HashSet},
         convert::{TryFrom, TryInto},
         fmt,
+        io::Read,
         iter::zip,
         mem,
         ops::{Deref, RangeInclusive},
@@ -2329,16 +2329,24 @@ impl Bank {
     }
 
     fn get_price_accounts(&self) -> (Vec<Pubkey>, Vec<AccountSharedData>) {
-        use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs, Accumulator};
-        use solana_pyth::hashers::keccak256::Keccak256Hasher;
-        use solana_pyth::pyth::PriceAccount;
-        use solana_pyth::pyth::{check, load, load_checked};
-        use solana_pyth::wormhole::AccumulatorSequenceTracker;
-        use solana_sdk::borsh;
-        use solana_sdk::pyth::{
-            price_proofs::create_account as create_price_proof_account,
-            wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
-            PYTH_PID,
+        use {
+            solana_pyth::{
+                accumulators::{
+                    merkle::{MerkleTree, PriceProofs},
+                    Accumulator,
+                },
+                hashers::keccak256::Keccak256Hasher,
+                pyth::{check, load, load_checked, PriceAccount},
+                wormhole::AccumulatorSequenceTracker,
+            },
+            solana_sdk::{
+                borsh,
+                pyth::{
+                    price_proofs::create_account as create_price_proof_account,
+                    wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
+                    PYTH_PID,
+                },
+            },
         };
         let (price_feed_ids, measure) = measure!(self.get_price_feeds());
         info!(
@@ -2379,16 +2387,24 @@ impl Bank {
     }
 
     fn update_accumulator(&self) {
-        use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs, Accumulator};
-        use solana_pyth::hashers::keccak256::Keccak256Hasher;
-        use solana_pyth::pyth::PriceAccount;
-        use solana_pyth::pyth::{check, load, load_checked};
-        use solana_pyth::wormhole::AccumulatorSequenceTracker;
-        use solana_sdk::borsh;
-        use solana_sdk::pyth::{
-            price_proofs::create_account as create_price_proof_account,
-            wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
-            PYTH_PID,
+        use {
+            solana_pyth::{
+                accumulators::{
+                    merkle::{MerkleTree, PriceProofs},
+                    Accumulator,
+                },
+                hashers::keccak256::Keccak256Hasher,
+                pyth::{check, load, load_checked, PriceAccount},
+                wormhole::AccumulatorSequenceTracker,
+            },
+            solana_sdk::{
+                borsh,
+                pyth::{
+                    price_proofs::create_account as create_price_proof_account,
+                    wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
+                    PYTH_PID,
+                },
+            },
         };
 
         //TODO: ring buffer logic
@@ -2469,15 +2485,20 @@ impl Bank {
         &self,
         acc: solana_pyth::accumulators::merkle::MerkleAccumulator,
     ) {
-        use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs};
-        use solana_pyth::pyth::load;
-        use solana_pyth::pyth::PriceAccount;
-        use solana_pyth::wormhole::AccumulatorSequenceTracker;
-        use solana_sdk::borsh as solana_borsh;
-        use solana_sdk::pyth::{
-            price_proofs::create_account as create_price_proof_account,
-            wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
-            ACCUMULATOR_EMITTER_ADDR, ACCUMULATOR_SEQUENCE_ADDR, PYTH_PID,
+        use {
+            solana_pyth::{
+                accumulators::merkle::{MerkleTree, PriceProofs},
+                pyth::{load, PriceAccount},
+                wormhole::AccumulatorSequenceTracker,
+            },
+            solana_sdk::{
+                borsh as solana_borsh,
+                pyth::{
+                    price_proofs::create_account as create_price_proof_account,
+                    wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
+                    ACCUMULATOR_EMITTER_ADDR, ACCUMULATOR_SEQUENCE_ADDR, PYTH_PID,
+                },
+            },
         };
         let clock = self.clock();
         let ring_buffer_idx = clock.slot % 100;
@@ -2563,16 +2584,23 @@ impl Bank {
     //              empty space
     // TODO: implement a parallelized fetching of accounts
     fn get_price_feeds(&self) -> Vec<Pubkey> {
-        use solana_pyth::accumulators::Accumulator;
-        use solana_pyth::accumulators::{merkle::MerkleTree, merkle::PriceProofs};
-        use solana_pyth::pyth::{load, load_as_option};
-        use solana_pyth::pyth::{MappingAccount, PriceAccount, ProductAccount};
-        use solana_pyth::wormhole::AccumulatorSequenceTracker;
-        use solana_sdk::borsh as solana_borsh;
-        use solana_sdk::pyth::{
-            price_proofs::create_account as create_price_proof_account,
-            wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
-            PYTH_PID,
+        use {
+            solana_pyth::{
+                accumulators::{
+                    merkle::{MerkleTree, PriceProofs},
+                    Accumulator,
+                },
+                pyth::{load, load_as_option, MappingAccount, PriceAccount, ProductAccount},
+                wormhole::AccumulatorSequenceTracker,
+            },
+            solana_sdk::{
+                borsh as solana_borsh,
+                pyth::{
+                    price_proofs::create_account as create_price_proof_account,
+                    wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
+                    PYTH_PID,
+                },
+            },
         };
 
         // Root devnet mapping account

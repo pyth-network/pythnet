@@ -46,10 +46,10 @@
 //! ```
 
 use crate::sysvar::Sysvar;
-pub use crate::{
-    account_info::AccountInfo, program_error::ProgramError, slot_history::SlotHistory,
+pub use {
+    crate::{account_info::AccountInfo, program_error::ProgramError, slot_history::SlotHistory},
+    solana_pyth::accumulators::merkle::MerkleTree,
 };
-pub use solana_pyth::accumulators::merkle::MerkleTree;
 
 crate::declare_sysvar_id!("SysvarAccumu1ator11111111111111111111111111", MerkleTree);
 

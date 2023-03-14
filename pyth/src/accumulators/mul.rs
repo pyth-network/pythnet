@@ -1,7 +1,7 @@
-use crate::accumulators::Accumulator;
-use crate::hashers::prime::PrimeHasher;
-use crate::hashers::Hasher;
-use std::hash::Hash;
+use crate::{
+    accumulators::Accumulator,
+    hashers::{prime::PrimeHasher, Hasher},
+};
 
 pub struct MulAccumulator<H: Hasher> {
     pub accumulator: H::Hash,
@@ -14,13 +14,13 @@ impl<'a> Accumulator<'a> for MulAccumulator<PrimeHasher> {
     fn prove(&self, item: &[u8]) -> Option<Self::Proof> {
         let bytes = u128::from_be_bytes(PrimeHasher::hashv(&[item]));
         let acc = u128::from_be_bytes(self.accumulator);
-        Some((acc / bytes as u128).to_be_bytes())
+        Some((acc / bytes).to_be_bytes())
     }
 
     fn verify(&self, proof: Self::Proof, item: &[u8]) -> bool {
         let bytes = u128::from_be_bytes(PrimeHasher::hashv(&[item]));
         let proof = u128::from_be_bytes(proof);
-        proof * bytes as u128 == u128::from_be_bytes(self.accumulator)
+        proof * bytes == u128::from_be_bytes(self.accumulator)
     }
 
     fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self> {
@@ -36,8 +36,7 @@ impl<'a> Accumulator<'a> for MulAccumulator<PrimeHasher> {
 
 #[cfg(test)]
 mod test {
-    use super::*;
-    use std::collections::HashSet;
+    use {super::*, std::collections::HashSet};
 
     #[test]
     fn test_membership() {

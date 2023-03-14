@@ -7,9 +7,7 @@
 //!
 //! [`sysvar::accumulator`]: crate::sysvar::accumulator
 
-use std::ops::Deref;
 use {
-    accumulators::merkle::MerkleTree,
     borsh::{BorshDeserialize, BorshSerialize},
     hex::FromHexError,
     pyth::{
@@ -18,9 +16,8 @@ use {
     serde::{Deserialize, Serialize, Serializer},
     std::{
         fmt,
-        io::{Error, ErrorKind::InvalidData, Read, Write},
+        io::{Read, Write},
         mem,
-        ops::DerefMut,
     },
 };
 
@@ -170,7 +167,7 @@ impl<P: serde::Serialize + for<'a> serde::Deserialize<'a>> AccumulatorAttestatio
         bytes.read_exact(accum_vec.as_mut_slice())?;
         let accumulator = match bincode::deserialize(accum_vec.as_slice()) {
             Ok(acc) => acc,
-            Err(e) => return Err(format!("AccumulatorDeserialization failed: {}", e).into()),
+            Err(e) => return Err(format!("AccumulatorDeserialization failed: {e}").into()),
         };
 
         let mut ring_buff_idx_vec = vec![0u8; mem::size_of::<u64>()];
