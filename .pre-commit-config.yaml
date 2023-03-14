@@ -63,8 +63,8 @@ repos:
         entry: cargo +nightly fmt --manifest-path ./sdk/program/Cargo.toml --all -- --config-path rustfmt.toml
         pass_filenames: false
         files: sdk/program
-      - id: cargo-clippy-solana-sdk
-        name: Cargo clippy for solana-sdk
+      - id: cargo-clippy-solana-program
+        name: Cargo clippy for solana-program
         language: "rust"
         entry: cargo +nightly clippy --manifest-path ./sdk/program/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings
         pass_filenames: false
