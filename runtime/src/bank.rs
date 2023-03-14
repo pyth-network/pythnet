@@ -2329,52 +2329,28 @@ impl Bank {
     }
 
     fn get_price_accounts(&self) -> (Vec<Pubkey>, Vec<AccountSharedData>) {
-        use {
-            solana_pyth::{
-                accumulators::{
-                    merkle::{MerkleTree, PriceProofs},
-                    Accumulator,
-                },
-                hashers::keccak256::Keccak256Hasher,
-                pyth::{check, load, load_checked, PriceAccount},
-                wormhole::AccumulatorSequenceTracker,
-            },
-            solana_sdk::{
-                borsh,
-                pyth::{
-                    price_proofs::create_account as create_price_proof_account,
-                    wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
-                    PYTH_PID,
-                },
-            },
-        };
+        use solana_pyth::pyth::{load_checked, PriceAccount};
         let (price_feed_ids, measure) = measure!(self.get_price_feeds());
         info!(
-            "[get_price_feeds] len: {}. get_price_feed_ids_in_ms: {}",
+            "[get_price_feeds] len: {}. get_price_feed_ids_in_us: {}",
             price_feed_ids.len(),
-            measure.as_ms()
+            measure.as_us()
         );
         // info!("price_feed_ids: {:?}", &price_feed_ids[0..3]);
         let (price_feed_accts, measure) = measure!(price_feed_ids
             .into_iter()
-            .filter_map(
-                |pf| if let Some(ai) = self.get_account_with_fixed_root(&pf) {
-                    Some((pf, ai))
-                } else {
-                    None
-                }
-            )
+            .filter_map(|pf| self.get_account_with_fixed_root(&pf).map(|ai| (pf, ai)))
             .collect::<Vec<_>>());
         info!(
-            "[get_price_feed_accts] len: {} ms: {}",
+            "[get_price_feed_accts] len: {} us: {}",
             price_feed_accts.len(),
-            measure.as_ms()
+            measure.as_us()
         );
 
         price_feed_accts
             .into_iter()
             .filter_map(|(pk, ai)| {
-                if let Some(&pa) = load_checked::<PriceAccount>(ai.data(), 0) {
+                if let Some(&_pa) = load_checked::<PriceAccount>(ai.data(), 0) {
                     Some((pk, ai))
                 } else {
                     None
@@ -2389,21 +2365,12 @@ impl Bank {
     fn update_accumulator(&self) {
         use {
             solana_pyth::{
-                accumulators::{
-                    merkle::{MerkleTree, PriceProofs},
-                    Accumulator,
-                },
+                accumulators::{merkle::PriceProofs, Accumulator},
                 hashers::keccak256::Keccak256Hasher,
-                pyth::{check, load, load_checked, PriceAccount},
-                wormhole::AccumulatorSequenceTracker,
             },
-            solana_sdk::{
-                borsh,
-                pyth::{
-                    price_proofs::create_account as create_price_proof_account,
-                    wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
-                    PYTH_PID,
-                },
+            solana_sdk::pyth::{
+                price_proofs::create_account as create_price_proof_account, wormhole::WORMHOLE_PID,
+                PYTH_PID,
             },
         };
 
@@ -2435,41 +2402,48 @@ impl Bank {
             &WORMHOLE_PID,
         );
 
-        self.update_sysvar_account(&sysvar::accumulator::id(), |account| {
-            // TODO: need to figure out generalizing the proofs
-            // this current impl is too specific to merkle tree & full price accounts
-            let proofs = acc
-                .items
-                .iter()
-                .map(|i| acc.prove(i).unwrap())
-                .collect::<Vec<_>>();
-            let price_proof_input =
-                zip(price_feed_ids.iter().map(|pk| pk.to_bytes()), proofs).collect::<Vec<_>>();
-            let price_proofs = PriceProofs::new(price_proof_input.as_slice());
+        let (_, update_sysvar_measure) = measure!(self.update_sysvar_account(
+            &sysvar::accumulator::id(),
+            |account| {
+                // TODO: need to figure out generalizing the proofs
+                // this current impl is too specific to merkle tree & full price accounts
+                let proofs = acc
+                    .items
+                    .iter()
+                    .map(|i| acc.prove(i).unwrap())
+                    .collect::<Vec<_>>();
+                let price_proof_input =
+                    zip(price_feed_ids.iter().map(|pk| pk.to_bytes()), proofs).collect::<Vec<_>>();
+                let price_proofs = PriceProofs::new(price_proof_input.as_slice());
 
-            let price_proof_len = bincode::serialized_size(&price_proofs).unwrap() as usize;
-            let new_proof_account = create_price_proof_account(
-                &price_proofs,
-                price_proof_len,
-                self.get_minimum_balance_for_rent_exemption(price_proof_len),
-                &WORMHOLE_PID,
-            );
-            self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
+                let price_proof_len = bincode::serialized_size(&price_proofs).unwrap() as usize;
+                let new_proof_account = create_price_proof_account(
+                    &price_proofs,
+                    price_proof_len,
+                    self.get_minimum_balance_for_rent_exemption(price_proof_len),
+                    &WORMHOLE_PID,
+                );
+                self.store_account_and_update_capitalization(&proof_pda, &new_proof_account);
 
-            // TODO: do we need to have enums/something in header/VAA to determine
-            // which type of Accumulator & Hasher that's used?
-            create_account::<sysvar::accumulator::MerkleTree<Keccak256Hasher>>(
-                //TODO: MerkleTree sysvar serialize
-                &acc.accumulator,
-                self.inherit_specially_retained_account_fields(account),
-            )
-        });
+                // TODO: do we need to have enums/something in header/VAA to determine
+                // which type of Accumulator & Hasher that's used?
+                create_account::<sysvar::accumulator::MerkleTree<Keccak256Hasher>>(
+                    //TODO: MerkleTree sysvar serialize
+                    &acc.accumulator,
+                    self.inherit_specially_retained_account_fields(account),
+                )
+            }
+        ));
 
-        info!("update_accumulator proof_pda: {}", proof_pda);
+        info!(
+            "update_accumulator proof_pda: {}, update_sysvar_us: {}",
+            proof_pda,
+            update_sysvar_measure.as_us()
+        );
 
         // Store generated VAA for Wormhole to relay.
         let (_, measure) = measure!(self.post_accumulator_attestation(acc));
-        info!("[post_accumulator_attestation] ms: {}", measure.as_ms());
+        info!("[post_accumulator_attestation] us: {}", measure.as_us());
     }
 
     // create VAA
@@ -2486,17 +2460,12 @@ impl Bank {
         acc: solana_pyth::accumulators::merkle::MerkleAccumulator,
     ) {
         use {
-            solana_pyth::{
-                accumulators::merkle::{MerkleTree, PriceProofs},
-                pyth::{load, PriceAccount},
-                wormhole::AccumulatorSequenceTracker,
-            },
+            solana_pyth::wormhole::AccumulatorSequenceTracker,
             solana_sdk::{
                 borsh as solana_borsh,
                 pyth::{
-                    price_proofs::create_account as create_price_proof_account,
                     wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
-                    ACCUMULATOR_EMITTER_ADDR, ACCUMULATOR_SEQUENCE_ADDR, PYTH_PID,
+                    ACCUMULATOR_EMITTER_ADDR, ACCUMULATOR_SEQUENCE_ADDR,
                 },
             },
         };
@@ -2584,24 +2553,7 @@ impl Bank {
     //              empty space
     // TODO: implement a parallelized fetching of accounts
     fn get_price_feeds(&self) -> Vec<Pubkey> {
-        use {
-            solana_pyth::{
-                accumulators::{
-                    merkle::{MerkleTree, PriceProofs},
-                    Accumulator,
-                },
-                pyth::{load, load_as_option, MappingAccount, PriceAccount, ProductAccount},
-                wormhole::AccumulatorSequenceTracker,
-            },
-            solana_sdk::{
-                borsh as solana_borsh,
-                pyth::{
-                    price_proofs::create_account as create_price_proof_account,
-                    wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
-                    PYTH_PID,
-                },
-            },
-        };
+        use solana_pyth::pyth::{load, load_as_option, MappingAccount, ProductAccount};
 
         // Root devnet mapping account
         let mut cur_mapping_account_key =
@@ -20613,11 +20565,7 @@ pub(crate) mod tests {
 
     #[test]
     fn test_pyth_pda_addresses() {
-        use solana_sdk::pyth::{
-            price_proofs::create_account as create_price_proof_account,
-            wormhole::{create_account as create_wormhole_msg_account, WORMHOLE_PID},
-            PYTH_PID,
-        };
+        use solana_sdk::pyth::wormhole::WORMHOLE_PID;
         // TODO: make this a const
         let (accumulator_message_pda, _) =
             Pubkey::find_program_address(&[b"AccumulatorMessage"], &WORMHOLE_PID);

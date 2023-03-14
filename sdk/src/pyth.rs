@@ -44,7 +44,6 @@ pub mod price_proofs {
 pub mod wormhole {
     use {
         super::*,
-        crate::account::Account,
         borsh::BorshSerialize,
         solana_pyth::wormhole::{AccumulatorSequenceTracker, PostedMessageUnreliableData},
         solana_sdk_macro::pubkey,
