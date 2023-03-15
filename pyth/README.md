@@ -42,3 +42,30 @@ Pending Tasks:
 			where MulProof = accumulator.accumulator/bytes as u128
 		}
 ```
+
+2. Implement the `hashers::Hasher` for the hashing algorithm to be used in an Accumulator
+
+```rust
+//This example shows how to implement the sha256 algorithm
+
+
+use crate::accumulators::Hasher;
+use sha3::{Sha3_256, Digest, digest::FixedOutput};
+
+#[derive(Clone, Default, Debug, serde::Serialize)]
+pub struct Sha256Algorithm {}
+
+impl Hasher for Sha256Algorithm {
+    type Hash = [u8; 32];
+
+    fn hashv<T: AsRef<[u8]>>(data: &[T]) {
+        let mut hasher = Sha3_256::new();
+        for d in data {
+            hasher.update(d);
+       }
+        <[u8; 32]>::from(hasher.finalize_fixed())
+    }
+}
+```
+
+3.
