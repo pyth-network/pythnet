@@ -166,7 +166,6 @@ use {
         collections::{HashMap, HashSet},
         convert::{TryFrom, TryInto},
         fmt,
-        io::Read,
         iter::zip,
         mem,
         ops::{Deref, RangeInclusive},
@@ -2365,7 +2364,10 @@ impl Bank {
     fn update_accumulator(&self) {
         use {
             solana_pyth::{
-                accumulators::{merkle::PriceProofs, Accumulator},
+                accumulators::{
+                    merkle::{MerkleAccumulator, PriceProofs},
+                    Accumulator,
+                },
                 hashers::keccak256::Keccak256Hasher,
             },
             solana_sdk::pyth::{
@@ -2374,7 +2376,6 @@ impl Bank {
             },
         };
 
-        //TODO: ring buffer logic
         let clock = self.clock();
         let ring_buffer_idx = clock.slot % 10_000;
 
@@ -2383,15 +2384,9 @@ impl Bank {
             .iter()
             .map(|a| a.data())
             .collect::<Vec<&[u8]>>();
-        let acc =
-            solana_pyth::accumulators::merkle::MerkleAccumulator::from_set(input.iter()).unwrap();
+        let acc = MerkleAccumulator::from_set(input.iter()).unwrap();
 
         // TODO: store canonical proof_bump for security?
-        // We could store all the prices in a single account containing an ordered Vec<(PriceId, PriceHash)>
-        // which means we only increase the account size by 64 bytes per price feed.
-        // It being ordered means we can quickly pull prices out with a binary search
-        // and the price service only has to request one account for each proof.
-        // We won't blow up the validator disk with hundreds of thousands of accounts this way
 
         let (proof_pda, _proof_bump) = Pubkey::find_program_address(
             &[
@@ -2472,10 +2467,12 @@ impl Bank {
         let clock = self.clock();
         let ring_buffer_idx = clock.slot % 100;
 
-        // let a = acc.accumulator.get_root().unwrap().to_vec();
         let accumulator_attestation = solana_pyth::AccumulatorAttestation {
-            // accumulator: self.accumulator().get_root().unwrap(),
-            accumulator: acc.accumulator.get_root().unwrap().to_vec(),
+            //TODO: think about how to handle unwrap() safely.
+            // this current unwrap() should be safe but need to consider
+            // how to handle any unwraps() during
+            // accumulator/proof generation in general
+            accumulator: *acc.accumulator.get_root().unwrap(),
             ring_buffer_idx,
             height: clock.slot,
             timestamp: clock.unix_timestamp,

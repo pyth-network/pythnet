@@ -42,8 +42,11 @@ pub struct MerkleTree<H: Hasher = Keccak256Hasher> {
 
 pub struct MerkleAccumulator<'a, H: Hasher = Keccak256Hasher> {
     pub accumulator: MerkleTree<H>,
-    /// for the solana merkle tree, we need to know the index of each item in the tree
-    /// which is why we keep the original items
+    /// A list of the original items inserted into the tree.
+    ///
+    /// The full list is kept because proofs require the index of each item in the tree, by
+    /// keeping the nodes we can look up the position in the original list for proof
+    /// verification.
     pub items: Vec<&'a [u8]>,
 }
 
@@ -303,6 +306,14 @@ mod test {
         assert!(accumulator.verify(proof, &item_a));
         let proof = accumulator.prove(&item_a).unwrap();
         println!(
+            "proof: {:#?}",
+            proof.0.iter().map(|x| format!("{x:?}")).collect::<Vec<_>>()
+        );
+        println!(
+            "accumulator root: {:?}",
+            accumulator.accumulator.get_root().unwrap()
+        );
+        println!(
             r"
                 Sizes:
                     MerkleAccumulator::Proof    {:?}
@@ -318,4 +329,6 @@ mod test {
         );
         assert!(!accumulator.verify(proof, &item_d));
     }
+
+    //TODO: more tests
 }

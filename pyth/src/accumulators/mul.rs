@@ -60,11 +60,14 @@ mod test {
         {
             let accumulator = MulAccumulator::<PrimeHasher>::from_set(set.iter()).unwrap();
             let proof = accumulator.prove(&item_a).unwrap();
-            println!("Mul:");
-            println!("Proof:  {:?}", accumulator.verify(proof, &item_a));
-            println!("Proof:  {:?}", accumulator.verify(proof, &item_d));
+            // println!("Mul:");
+            // println!("Proof:  {:?}", accumulator.verify(proof, &item_a));
+            // println!("Proof:  {:?}", accumulator.verify(proof, &item_d));
             assert!(accumulator.verify(proof, &item_a));
             assert!(!accumulator.verify(proof, &item_d));
         }
     }
+
+    //TODO: more tests
+    //      MulAccumulator::<Keccack256Hasher>
 }
