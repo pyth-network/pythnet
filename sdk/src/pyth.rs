@@ -7,21 +7,28 @@ use {
 };
 
 /// Pubkey::find_program_address(&[b"emitter"], &sysvar::accumulator::id());
-pub const ACCUMULATOR_EMITTER_ADDR: Pubkey = pubkey!("G9LV2mp9ua1znRAfYwZz5cPiJMAbo1T6mbjdQsDZuMJg");
+pub const ACCUMULATOR_EMITTER_ADDR: Pubkey =
+    pubkey!("G9LV2mp9ua1znRAfYwZz5cPiJMAbo1T6mbjdQsDZuMJg");
 /// Pubkey::find_program_address(&[b"Sequence", &emitter_pda_key.to_bytes()], &WORMHOLE_PID);
-pub const ACCUMULATOR_SEQUENCE_ADDR: Pubkey = pubkey!("HiqU8jiyUoFbRjf4YFAKRFWq5NZykEYC6mWhXXnoszJR");
+pub const ACCUMULATOR_SEQUENCE_ADDR: Pubkey =
+    pubkey!("HiqU8jiyUoFbRjf4YFAKRFWq5NZykEYC6mWhXXnoszJR");
 pub const PYTH_PID: Pubkey = pubkey!("FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH");
 
 pub mod price_proofs {
-    use super::*;
-    use solana_pyth::accumulators::merkle::PriceProofs;
+    use {
+        super::*,
+        solana_pyth::{accumulators::merkle::PriceProofs, hashers::Hasher},
+    };
 
-    pub fn to_account(price_proof: &PriceProofs, account: &mut AccountSharedData) -> Option<()> {
+    fn to_account<H: Hasher>(
+        price_proof: &PriceProofs<H>,
+        account: &mut AccountSharedData,
+    ) -> Option<()> {
         bincode::serialize_into(account.data_as_mut_slice(), price_proof).ok()
     }
 
-    pub fn create_account(
-        price_proof: &PriceProofs,
+    pub fn create_account<H: Hasher>(
+        price_proof: &PriceProofs<H>,
         data_len: usize,
         lamports: u64,
         owner: &Pubkey,
@@ -35,11 +42,12 @@ pub mod price_proofs {
 }
 
 pub mod wormhole {
-    use super::*;
-    use crate::account::Account;
-    use borsh::BorshSerialize;
-    use solana_pyth::wormhole::{AccumulatorSequenceTracker, PostedMessageUnreliableData};
-    use solana_sdk_macro::pubkey;
+    use {
+        super::*,
+        borsh::BorshSerialize,
+        solana_pyth::wormhole::{AccumulatorSequenceTracker, PostedMessageUnreliableData},
+        solana_sdk_macro::pubkey,
+    };
 
     pub const WORMHOLE_PID: Pubkey = pubkey!("worm2ZoG2kUd4vFXhvjh93UUH596ayRfgQ2MgjNMTth");
 

@@ -1,17 +1,9 @@
-use crate::Hash;
-use serde::Serialize;
-
 pub mod merkle;
+mod mul;
 
-pub(crate) type AccumulatorId = [u8; 32];
-
-pub trait Accumulator {
-    type Proof: Serialize;
-
-    fn new<'r, I, V>(input: I) -> Self
-    where
-        I: Iterator<Item = (AccumulatorId, &'r V)> + Clone,
-        V: std::hash::Hash + 'r;
-
-    fn proof(&self) -> Self::Proof;
+pub trait Accumulator<'a>: Sized {
+    type Proof: 'a;
+    fn from_set(items: impl Iterator<Item = &'a &'a [u8]>) -> Option<Self>;
+    fn prove(&'a self, item: &[u8]) -> Option<Self::Proof>;
+    fn verify(&'a self, proof: Self::Proof, item: &[u8]) -> bool;
 }

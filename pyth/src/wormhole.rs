@@ -1,9 +1,12 @@
-use crate::RawPubkey;
-use borsh::{BorshDeserialize, BorshSerialize};
-use serde::{Deserialize, Serialize};
-use std::io::ErrorKind::InvalidData;
-use std::io::{Error, Write};
-use std::ops::{Deref, DerefMut};
+use {
+    crate::RawPubkey,
+    borsh::{BorshDeserialize, BorshSerialize},
+    serde::{Deserialize, Serialize},
+    std::{
+        io::{Error, ErrorKind::InvalidData, Write},
+        ops::{Deref, DerefMut},
+    },
+};
 
 #[repr(transparent)]
 #[derive(Default)]
@@ -62,10 +65,7 @@ impl BorshDeserialize for PostedMessageUnreliableData {
         if magic != expected {
             return Err(Error::new(
                 InvalidData,
-                format!(
-                    "Magic mismatch. Expected {:?} but got {:?}",
-                    expected, magic
-                ),
+                format!("Magic mismatch. Expected {expected:?} but got {magic:?}"),
             ));
         };
         *buf = &buf[3..];

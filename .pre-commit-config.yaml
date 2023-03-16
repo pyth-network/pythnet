@@ -1,0 +1,71 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v3.2.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-added-large-files
+        exclude: package-lock.json
+  # Hook to format many type of files in the repo
+  # including solidity contracts.
+  - repo: https://github.com/pre-commit/mirrors-prettier
+    rev: "v2.7.1"
+    hooks:
+      - id: prettier
+        additional_dependencies:
+          - "prettier@2.7.1"
+          - "prettier-plugin-solidity@1.0.0-rc.1"
+  - repo: local
+    hooks:
+      # Hooks for the solana-pyth
+      - id: cargo-fmt-solana-pyth
+        name: Cargo format for solana-pyth
+        language: "rust"
+        entry: cargo +nightly fmt --manifest-path ./pyth/Cargo.toml --all -- --config-path rustfmt.toml
+        pass_filenames: false
+        files: pyth
+      - id: cargo-clippy-solana-pyth
+        name: Cargo clippy for solana-pyth
+        language: "rust"
+        entry: cargo +nightly clippy --manifest-path ./pyth/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings
+        pass_filenames: false
+        files: pyth
+      # Hooks for the solana-runtime
+      - id: cargo-fmt-solana-runtime
+        name: Cargo format for solana-runtime
+        language: "rust"
+        entry: cargo +nightly fmt --manifest-path ./runtime/Cargo.toml --all -- --config-path rustfmt.toml
+        pass_filenames: false
+        files: runtime
+      - id: cargo-clippy-solana-runtime
+        name: Cargo clippy for solana-runtime
+        language: "rust"
+        entry: cargo +nightly clippy --manifest-path ./runtime/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings
+        pass_filenames: false
+        files: runtime
+      # Hooks for the solana-sdk
+      - id: cargo-fmt-solana-sdk
+        name: Cargo format for solana-sdk
+        language: "rust"
+        entry: cargo +nightly fmt --manifest-path ./sdk/Cargo.toml --all -- --config-path rustfmt.toml
+        pass_filenames: false
+        files: sdk
+      - id: cargo-clippy-solana-sdk
+        name: Cargo clippy for solana-sdk
+        language: "rust"
+        entry: cargo +nightly clippy --manifest-path ./sdk/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings
+        pass_filenames: false
+        files: sdk
+      # Hooks for solana-program
+      - id: cargo-fmt-solana-program
+        name: Cargo format for solana-program
+        language: "rust"
+        entry: cargo +nightly fmt --manifest-path ./sdk/program/Cargo.toml --all -- --config-path rustfmt.toml
+        pass_filenames: false
+        files: sdk/program
+      - id: cargo-clippy-solana-program
+        name: Cargo clippy for solana-program
+        language: "rust"
+        entry: cargo +nightly clippy --manifest-path ./sdk/program/Cargo.toml --tests --fix --allow-dirty --allow-staged -- -D warnings
+        pass_filenames: false
+        files: sdk/program
