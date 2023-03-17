@@ -104,6 +104,7 @@ members = [
 
 exclude = [
     "programs/sbf",
+    "geyser",
 ]
 
 # This prevents a Travis CI error when building for Windows.
