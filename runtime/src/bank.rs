@@ -2591,6 +2591,45 @@ impl Bank {
         price_account_keys
     }
 
+    fn get_accumulator_accounts(&self) -> Vec<AccountSharedData> {
+        let accumulator_mapping_program = Pubkey::from_str("<ACC_MAPPING_PID>>").unwrap();
+        let _a = self
+            .get_filtered_indexed_accounts(
+                &IndexKey::ProgramId(accumulator_mapping_program),
+                // The program-id account index checks for Account owner on inclusion. However, due
+                // to the current AccountsDb implementation, an account may remain in storage as a
+                // zero-lamport AccountSharedData::Default() after being wiped and reinitialized in later
+                // updates. We include the redundant filters here to avoid returning these
+                // accounts.
+                |account| account.owner() == &accumulator_mapping_program,
+                &ScanConfig::default(),
+                self.byte_limit_for_scans(),
+            )
+            .map_err(|e| {
+                info!("get_accumulator_accounts_error: {:?}", e);
+                e
+            })
+            .unwrap();
+        let _accumulator_mapping_pdas = self
+            .get_filtered_program_accounts(
+                &accumulator_mapping_program,
+                |_| true,
+                &ScanConfig::default(),
+            )
+            .map_err(|e| {
+                info!("get_accumulator_accounts_error: {:?}", e);
+                e
+            })
+            .unwrap();
+        // let accumulator_account_keys = AccumulatorMapping::deserialize(
+        //     self.get_account_with_fixed_root(&accumulator_mapping_program)
+        //         .unwrap(),
+        // )
+        // .unwrap()
+        // .account_list;
+        vec![]
+    }
+
     pub fn epoch_duration_in_years(&self, prev_epoch: Epoch) -> f64 {
         // period: time that has passed as a fraction of a year, basically the length of
         //  an epoch as a fraction of a year

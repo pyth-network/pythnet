@@ -11,7 +11,10 @@ Pending Tasks:
 - [] adjust `measure!` logs in `bank.rs`
 - [] add back serde-related tests
 - [] ciborium/protobuf/flatbuffer for projection/compressing wire format
-  - verkle tree?
+  - verkle tree, rsa/bilinear accumulator?
+- [] bank.rs: get_price_accounts() -> get_accumulator_accounts()
+  - [] "mapping"(vec) of accounts to read
+  - [] pyth-admin - add/remove from address book(accumulator account list)
 
 ## Notes
 

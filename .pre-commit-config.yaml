@@ -21,7 +21,7 @@ repos:
       - id: cargo-fmt-solana-pyth
         name: Cargo format for solana-pyth
         language: "rust"
-        entry: cargo +nightly fmt --manifest-path ./pyth/Cargo.toml --all -- --config-path rustfmt.toml
+        entry: cargo +nightly fmt --manifest-path ./pyth/Cargo.toml -- --config-path pyth/rustfmt.toml
         pass_filenames: false
         files: pyth
       - id: cargo-clippy-solana-pyth
@@ -34,7 +34,7 @@ repos:
       - id: cargo-fmt-solana-runtime
         name: Cargo format for solana-runtime
         language: "rust"
-        entry: cargo +nightly fmt --manifest-path ./runtime/Cargo.toml --all -- --config-path rustfmt.toml
+        entry: cargo +nightly fmt --manifest-path ./runtime/Cargo.toml -- --config-path rustfmt.toml
         pass_filenames: false
         files: runtime
       - id: cargo-clippy-solana-runtime
@@ -47,7 +47,7 @@ repos:
       - id: cargo-fmt-solana-sdk
         name: Cargo format for solana-sdk
         language: "rust"
-        entry: cargo +nightly fmt --manifest-path ./sdk/Cargo.toml --all -- --config-path rustfmt.toml
+        entry: cargo +nightly fmt --manifest-path ./sdk/Cargo.toml -- --config-path rustfmt.toml
         pass_filenames: false
         files: sdk
       - id: cargo-clippy-solana-sdk
@@ -60,7 +60,7 @@ repos:
       - id: cargo-fmt-solana-program
         name: Cargo format for solana-program
         language: "rust"
-        entry: cargo +nightly fmt --manifest-path ./sdk/program/Cargo.toml --all -- --config-path rustfmt.toml
+        entry: cargo +nightly fmt --manifest-path ./sdk/program/Cargo.toml -- --config-path rustfmt.toml
         pass_filenames: false
         files: sdk/program
       - id: cargo-clippy-solana-program

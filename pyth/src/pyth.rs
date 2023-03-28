@@ -1,6 +1,13 @@
-use {crate::RawPubkey, borsh::BorshSerialize};
 use {
-    bytemuck::{try_from_bytes, Pod, Zeroable},
+    crate::RawPubkey,
+    borsh::BorshSerialize,
+};
+use {
+    bytemuck::{
+        try_from_bytes,
+        Pod,
+        Zeroable,
+    },
     // solana_merkle_tree::MerkleTree,
     std::mem::size_of,
 };
@@ -9,9 +16,9 @@ use {
 #[derive(Copy, Clone, Zeroable, Pod, Default, BorshSerialize)]
 pub struct AccountHeader {
     pub magic_number: u32,
-    pub version: u32,
+    pub version:      u32,
     pub account_type: u32,
-    pub size: u32,
+    pub size:         u32,
 }
 
 pub const PC_MAP_TABLE_SIZE: u32 = 640;
@@ -21,11 +28,11 @@ pub const PC_VERSION: u32 = 2;
 #[repr(C)]
 #[derive(Copy, Clone)]
 pub struct MappingAccount {
-    pub header: AccountHeader,
-    pub number_of_products: u32,
-    pub unused_: u32,
+    pub header:               AccountHeader,
+    pub number_of_products:   u32,
+    pub unused_:              u32,
     pub next_mapping_account: RawPubkey,
-    pub products_list: [RawPubkey; PC_MAP_TABLE_SIZE as usize],
+    pub products_list:        [RawPubkey; PC_MAP_TABLE_SIZE as usize],
 }
 
 pub const PC_ACCTYPE_MAPPING: u32 = 1;
@@ -38,16 +45,19 @@ impl PythAccount for MappingAccount {
 }
 
 // Unsafe impl because product_list is of size 640 and there's no derived trait for this size
-unsafe impl Pod for MappingAccount {}
+unsafe impl Pod for MappingAccount {
+}
 
-unsafe impl Zeroable for MappingAccount {}
+unsafe impl Zeroable for MappingAccount {
+}
 
 #[repr(C)]
 #[derive(Copy, Clone, Pod, Zeroable)]
 pub struct ProductAccount {
-    pub header: AccountHeader,
+    pub header:              AccountHeader,
     pub first_price_account: RawPubkey,
 }
+
 pub const PC_ACCTYPE_PRODUCT: u32 = 2;
 pub const PC_PROD_ACC_SIZE: u32 = 512;
 
@@ -61,46 +71,46 @@ impl PythAccount for ProductAccount {
 #[cfg_attr(not(test), derive(Copy, Clone, Pod, Zeroable))]
 #[cfg_attr(test, derive(Copy, Clone, Pod, Zeroable, Default))]
 pub struct PriceAccount {
-    pub header: AccountHeader,
+    pub header:             AccountHeader,
     /// Type of the price account
-    pub price_type: u32,
+    pub price_type:         u32,
     /// Exponent for the published prices
-    pub exponent: i32,
+    pub exponent:           i32,
     /// Current number of authorized publishers
-    pub num_: u32,
+    pub num_:               u32,
     /// Number of valid quotes for the last aggregation
-    pub num_qt_: u32,
+    pub num_qt_:            u32,
     /// Last slot with a succesful aggregation (status : TRADING)
-    pub last_slot_: u64,
+    pub last_slot_:         u64,
     /// Second to last slot where aggregation was attempted
-    pub valid_slot_: u64,
+    pub valid_slot_:        u64,
     /// Ema for price
-    pub twap_: PriceEma,
+    pub twap_:              PriceEma,
     /// Ema for confidence
-    pub twac_: PriceEma,
+    pub twac_:              PriceEma,
     /// Last time aggregation was attempted
-    pub timestamp_: i64,
+    pub timestamp_:         i64,
     /// Minimum valid publisher quotes for a succesful aggregation
-    pub min_pub_: u8,
-    pub unused_1_: i8,
-    pub unused_2_: i16,
-    pub unused_3_: i32,
+    pub min_pub_:           u8,
+    pub unused_1_:          i8,
+    pub unused_2_:          i16,
+    pub unused_3_:          i32,
     /// Corresponding product account
-    pub product_account: RawPubkey,
+    pub product_account:    RawPubkey,
     /// Next price account in the list
     pub next_price_account: RawPubkey,
     /// Second to last slot where aggregation was succesful (i.e. status : TRADING)
-    pub prev_slot_: u64,
+    pub prev_slot_:         u64,
     /// Aggregate price at prev_slot_
-    pub prev_price_: i64,
+    pub prev_price_:        i64,
     /// Confidence interval at prev_slot_
-    pub prev_conf_: u64,
+    pub prev_conf_:         u64,
     /// Timestamp of prev_slot_
-    pub prev_timestamp_: i64,
+    pub prev_timestamp_:    i64,
     /// Last attempted aggregate results
-    pub agg_: PriceInfo,
+    pub agg_:               PriceInfo,
     /// Publishers' price components
-    pub comp_: [PriceComponent; PC_COMP_SIZE as usize],
+    pub comp_:              [PriceComponent; PC_COMP_SIZE as usize],
 }
 
 pub const PC_COMP_SIZE: u32 = 32;
@@ -110,8 +120,8 @@ pub const PC_COMP_SIZE: u32 = 32;
 #[cfg_attr(not(test), derive(Copy, Clone, Pod, Zeroable))]
 #[cfg_attr(test, derive(Copy, Clone, Pod, Zeroable, Default))]
 pub struct PriceComponent {
-    pub pub_: RawPubkey,
-    pub agg_: PriceInfo,
+    pub pub_:    RawPubkey,
+    pub agg_:    PriceInfo,
     pub latest_: PriceInfo,
 }
 
@@ -120,11 +130,11 @@ pub struct PriceComponent {
 #[cfg_attr(not(test), derive(Copy, Clone, Pod, Zeroable))]
 #[cfg_attr(test, derive(Copy, Clone, Pod, Zeroable, Default))]
 pub struct PriceInfo {
-    pub price_: i64,
-    pub conf_: u64,
-    pub status_: u32,
+    pub price_:           i64,
+    pub conf_:            u64,
+    pub status_:          u32,
     pub corp_act_status_: u32,
-    pub pub_slot_: u64,
+    pub pub_slot_:        u64,
 }
 
 #[repr(C)]
@@ -132,13 +142,15 @@ pub struct PriceInfo {
 #[cfg_attr(not(test), derive(Copy, Clone, Pod, Zeroable))]
 #[cfg_attr(test, derive(Copy, Clone, Pod, Zeroable, Default))]
 pub struct PriceEma {
-    pub val_: i64,
+    pub val_:   i64,
     pub numer_: i64,
     pub denom_: i64,
 }
 
 pub const PC_ACCTYPE_PRICE: u32 = 3;
+
 pub type size_t = ::std::os::raw::c_ulong;
+
 pub const PC_PRICE_T_COMP_OFFSET: size_t = 240;
 
 impl PythAccount for PriceAccount {
@@ -235,7 +247,23 @@ pub const PUBKEY_LEN: usize = 32;
 
 #[repr(u8)]
 pub enum PayloadId {
-    PriceAttestation = 1,      // Not in use
-    PriceBatchAttestation = 2, // Not in use
+    PriceAttestation        = 1,
+    // Not in use
+    PriceBatchAttestation   = 2,
+    // Not in use
     AccumulationAttestation = 3,
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_price_account_size() {
+        let price_account_size = size_of::<PriceAccount>();
+        // comp_ offset + (size_of::<PriceComp>() * PC_COMP_SIZE)
+        // = 240 + (96 * 32)
+        // = 3312
+        assert_eq!(price_account_size, 3312);
+    }
 }

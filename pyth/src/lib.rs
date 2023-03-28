@@ -8,15 +8,29 @@
 //! [`sysvar::accumulator`]: crate::sysvar::accumulator
 
 use {
-    borsh::{BorshDeserialize, BorshSerialize},
+    borsh::{
+        BorshDeserialize,
+        BorshSerialize,
+    },
     hex::FromHexError,
     pyth::{
-        PayloadId, P2W_FORMAT_HDR_SIZE, P2W_FORMAT_VER_MAJOR, P2W_FORMAT_VER_MINOR, PACC2W_MAGIC,
+        PayloadId,
+        P2W_FORMAT_HDR_SIZE,
+        P2W_FORMAT_VER_MAJOR,
+        P2W_FORMAT_VER_MINOR,
+        PACC2W_MAGIC,
     },
-    serde::{Deserialize, Serialize, Serializer},
+    serde::{
+        Deserialize,
+        Serialize,
+        Serializer,
+    },
     std::{
         fmt,
-        io::{Read, Write},
+        io::{
+            Read,
+            Write,
+        },
         mem,
     },
 };
@@ -46,9 +60,9 @@ pub struct AccumulatorAttestation<P: serde::Serialize> {
     #[serde(serialize_with = "use_to_string")]
     pub ring_buffer_idx: u64,
     #[serde(serialize_with = "use_to_string")]
-    pub height: u64,
+    pub height:          u64,
     // TODO: Go back to UnixTimestamp.
-    pub timestamp: i64,
+    pub timestamp:       i64,
 }
 
 pub type ErrBox = Box<dyn std::error::Error>;
@@ -128,8 +142,8 @@ impl<P: serde::Serialize + for<'a> serde::Deserialize<'a>> AccumulatorAttestatio
         // Only older minors are not okay for this codebase
         if minor_version < P2W_FORMAT_VER_MINOR {
             return Err(format!(
-                "Unsupported format minor_version {minor_version}, expected {P2W_FORMAT_VER_MINOR} or more"
-            )
+				"Unsupported format minor_version {minor_version}, expected {P2W_FORMAT_VER_MINOR} or more"
+			)
             .into());
         }
 
@@ -266,7 +280,10 @@ mod tests {
     use {
         super::*,
         crate::{
-            accumulators::{merkle::MerkleAccumulator, Accumulator},
+            accumulators::{
+                merkle::MerkleAccumulator,
+                Accumulator,
+            },
             hashers::keccak256::Keccak256Hasher,
             pyth::*,
         },

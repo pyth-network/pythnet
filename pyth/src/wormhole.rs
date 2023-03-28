@@ -1,10 +1,23 @@
 use {
     crate::RawPubkey,
-    borsh::{BorshDeserialize, BorshSerialize},
-    serde::{Deserialize, Serialize},
+    borsh::{
+        BorshDeserialize,
+        BorshSerialize,
+    },
+    serde::{
+        Deserialize,
+        Serialize,
+    },
     std::{
-        io::{Error, ErrorKind::InvalidData, Write},
-        ops::{Deref, DerefMut},
+        io::{
+            Error,
+            ErrorKind::InvalidData,
+            Write,
+        },
+        ops::{
+            Deref,
+            DerefMut,
+        },
     },
 };
 
