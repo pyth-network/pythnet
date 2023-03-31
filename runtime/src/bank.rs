@@ -76,6 +76,7 @@ use {
         iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
         ThreadPool, ThreadPoolBuilder,
     },
+    serde::Serialize,
     solana_measure::measure::Measure,
     solana_metrics::{inc_new_counter_debug, inc_new_counter_info},
     solana_program_runtime::{
@@ -152,6 +153,7 @@ use {
         path::PathBuf,
         ptr,
         rc::Rc,
+        str::FromStr,
         sync::{
             atomic::{
                 AtomicBool, AtomicI64, AtomicU64,
@@ -1497,7 +1499,14 @@ impl Bank {
             }
             bank.update_stake_history(None);
         }
+        if bank
+            .feature_set
+            .is_active(&feature_set::enable_accumulator_sysvar::id())
+        {
+            bank.update_accumulator();
+        }
         bank.update_clock(None);
+
         bank.update_rent();
         bank.update_epoch_schedule();
         bank.update_recent_blockhashes();
@@ -1854,6 +1863,10 @@ impl Bank {
             |_| {
                 new.update_slot_hashes();
                 new.update_stake_history(Some(parent_epoch));
+                if feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
+                    info!("Updating accumulator. Parent_epoch: {}", parent_epoch);
+                    new.update_accumulator();
+                }
                 new.update_clock(Some(parent_epoch));
                 new.update_fees();
             },
@@ -1866,7 +1879,6 @@ impl Bank {
             (),
             "fill_sysvar_cache",
         );
-
         time.stop();
 
         datapoint_info!(
@@ -2442,6 +2454,7 @@ impl Bank {
         if epoch == Some(self.epoch()) {
             return;
         }
+
         // if I'm the first Bank in an epoch, ensure stake_history is updated
         self.update_sysvar_account(&sysvar::stake_history::id(), |account| {
             create_account::<sysvar::stake_history::StakeHistory>(
@@ -2449,6 +2462,195 @@ impl Bank {
                 self.inherit_specially_retained_account_fields(account),
             )
         });
+    }
+
+    /// Loads the Accumulator Sysvar from disk, creating an empty account for it if it does not
+    /// exist already. See `clock` to see a similar sysvar this is based on.
+    pub fn accumulator(&self) -> sysvar::accumulator::MerkleAccumulator {
+        from_account(
+            &self
+                .get_account(&sysvar::accumulator::id())
+                .unwrap_or_default(),
+        )
+        .unwrap_or_default()
+    }
+
+    /// Updates the Accumulator Sysvar at the start of a new slot. See `update_clock` to see a similar
+    /// sysvar this is based on.
+    ///
+    /// Note:
+    /// - Library imports are placed within this function to keep the diff against upstream small.
+    /// - Functionality is kept in the `solana-pyth` library to contain our new dependencies.
+    /// - This update will incur a performance hit on each slot, so must be kept efficient.
+    /// - Focused on Merkle temporarily and will be generalized to the Accumulator trait.
+    fn update_accumulator(&self) {
+        use {
+            byteorder::{BigEndian, ReadBytesExt},
+            solana_pyth::{
+                accumulators::{merkle::MerkleAccumulator, Accumulator},
+                PYTH_PID,
+            },
+            solana_sdk::borsh::BorshSerialize,
+        };
+
+        // Use the current Clock to determine the index into the accumulator ring buffer.
+        let clock = self.clock();
+        let index = clock.slot % 10_000;
+
+        // Find all accounts owned by the Accumulator program using get_program_accounts, and
+        // extract the account data.
+        //
+        // NOTE: This is set to the Syvar temporarily but will be changed to the Accumulator
+        // program once it is deployed with an official address.
+        let accounts = self
+            .get_program_accounts(&sysvar::accumulator::id(), &ScanConfig::new(true))
+            .unwrap();
+
+        // Filter accounts that don't match the Anchor sighash.
+        let accounts = accounts.iter().filter(|(_, account)| {
+            // Remove accounts that do not start with the expected Anchor sighash.
+            let preimage = b"account:AccumulatorInput";
+            let mut sighash = [0u8; 8];
+            let mut expected_sighash = [0u8; 8];
+            sighash.copy_from_slice(&account.data()[..8]);
+            expected_sighash.copy_from_slice(&hashv(&[preimage]).to_bytes()[..8]);
+            sighash == expected_sighash
+        });
+
+        // Using the offsets in each Account, extract the various data versions from the account.
+        // We deduplicate this result because the accumulator expects a set.
+        let accounts = accounts
+            .flat_map(|(_, account)| {
+                let data = account.data();
+                let mut cursor = std::io::Cursor::new(&data[10..]);
+                let header_len = cursor.read_u16::<BigEndian>().unwrap();
+                let mut header_begin = header_len;
+                let mut header_end = cursor.read_u16::<BigEndian>().unwrap();
+                let mut inputs = Vec::new();
+                while header_end != 0 {
+                    let end_offset = header_len + header_end;
+                    let accumulator_input_data = &data[header_begin as usize..header_end as usize];
+                    header_end = cursor.read_u16::<BigEndian>().unwrap();
+                    header_begin = end_offset;
+                    inputs.push(accumulator_input_data);
+                }
+                inputs
+            })
+            .sorted_unstable()
+            .dedup();
+
+        // We now generate a Proof PDA (Owned by the System Program) to store the resulting Proof
+        // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
+        // for RPC users to select the correct proof for an associated VAA.
+        let (accumulator_account, _) = Pubkey::find_program_address(
+            &[b"AccumulatorState", &PYTH_PID, &index.to_be_bytes()],
+            &solana_sdk::system_program::id(),
+        );
+
+        let accumulator_data = {
+            let data = accounts.clone().collect::<Vec<_>>().try_to_vec().unwrap();
+            let owner = solana_sdk::system_program::id();
+            let balance = self.get_minimum_balance_for_rent_exemption(data.len());
+            let mut account = AccountSharedData::new(balance, data.len(), &owner);
+            account.set_data(data);
+            account
+        };
+
+        // Write the Account Set into `accumulator_state` so that the hermes application can
+        // request historical data to prove.
+        self.store_account_and_update_capitalization(&accumulator_account, &accumulator_data);
+
+        // Generate a Message owned by Wormhole to be sent cross-chain. This short-circuits the
+        // Wormhole message generation code that would normally be called, but the Guardian
+        // set filters our messages so this does not pose a security risk.
+        let accumulator = MerkleAccumulator::from_set(accounts).unwrap();
+        self.post_accumulator_attestation(accumulator);
+    }
+
+    fn post_accumulator_attestation(
+        &self,
+        acc: solana_pyth::accumulators::merkle::MerkleAccumulator,
+    ) {
+        use {
+            solana_pyth::{
+                wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
+                ACCUMULATOR_EMITTER_ADDR, ACCUMULATOR_SEQUENCE_ADDR, WORMHOLE_PID,
+            },
+            solana_sdk::borsh::BorshSerialize,
+        };
+
+        // Wormhole uses a Sequence account that is incremented each time a message is posted. As
+        // we aren't calling Wormhole we need to bump this ourselves. If it doesn't exist, we just
+        // create it instead.
+        let mut sequence: AccumulatorSequenceTracker = {
+            let data = Pubkey::new_from_array(ACCUMULATOR_SEQUENCE_ADDR);
+            let data = self.get_account_with_fixed_root(&data).unwrap_or_default();
+            let data = data.data();
+            solana_sdk::borsh::try_from_slice_unchecked(data)
+                .unwrap_or(AccumulatorSequenceTracker { sequence: 0 })
+        };
+
+        info!("accumulator sequence: {:?}", sequence.sequence);
+
+        // Generate the Message to emit via Wormhole.
+        let message = PostedMessageUnreliableData {
+            message: MessageData {
+                vaa_version: 1,
+                consistency_level: 1,
+                vaa_time: 1u32,
+                vaa_signature_account: Pubkey::default().to_bytes(),
+                submission_time: self.clock().unix_timestamp as u32,
+                nonce: 0,
+                sequence: sequence.sequence,
+                emitter_chain: 26,
+                emitter_address: ACCUMULATOR_EMITTER_ADDR,
+                payload: acc.try_to_vec().unwrap(),
+            },
+        };
+
+        // Now we can bump and write the Sequence account.
+        sequence.sequence += 1;
+        let sequence = sequence.try_to_vec().unwrap();
+        let sequence_balance = self.get_minimum_balance_for_rent_exemption(sequence.len());
+        let sequence_account = {
+            let owner = &WORMHOLE_PID;
+            let mut account = AccountSharedData::new(
+                sequence_balance,
+                sequence.len(),
+                &Pubkey::new_from_array(*owner),
+            );
+            account.set_data(sequence);
+            account
+        };
+
+        self.store_account_and_update_capitalization(
+            &Pubkey::new_from_array(ACCUMULATOR_SEQUENCE_ADDR),
+            &sequence_account,
+        );
+
+        info!("msg_data.message: {:?}", message.message);
+
+        // Serialize into (and create if necesary) the message account.
+        let message = message.try_to_vec().unwrap();
+        let message_balance = self.get_minimum_balance_for_rent_exemption(message.len());
+        let message_account = {
+            let owner = &WORMHOLE_PID;
+            let mut account = AccountSharedData::new(
+                message_balance,
+                message.len(),
+                &Pubkey::new_from_array(*owner),
+            );
+            account.set_data(message);
+            account
+        };
+
+        // The accumulator_message_pda is derived at: 9VKyMGaKKJLUMBA5Fnf3dFiWMqGQkM979b5PP3rp62ck
+        let (message_pda, _) = Pubkey::find_program_address(
+            &[b"AccumulatorMessage"],
+            &Pubkey::new_from_array(WORMHOLE_PID),
+        );
+
+        self.store_account_and_update_capitalization(&message_pda, &message_account);
     }
 
     pub fn epoch_duration_in_years(&self, prev_epoch: Epoch) -> f64 {
@@ -18195,5 +18397,32 @@ pub(crate) mod tests {
         // NOTE: Use `<=` here (instead of `==`) since other accounts could
         // also be reclaimed by rent collection.
         assert!(bank.load_accounts_data_size_delta() <= -(data_size as i64));
+    }
+
+    #[test]
+    fn test_pyth_pda_addresses() {
+        use solana_sdk::pyth::wormhole::WORMHOLE_PID;
+        // TODO: make this a const
+        let (accumulator_message_pda, _) =
+            Pubkey::find_program_address(&[b"AccumulatorMessage"], &WORMHOLE_PID);
+
+        //TODO: make this a const
+        //seeds = ["emitter"], seeds::program = cpiProgramId
+        let (emitter_pda_key, _) =
+            Pubkey::find_program_address(&[b"emitter"], &sysvar::accumulator::id());
+        //TODO: make this a const
+        //seeds = ["Sequence", wormholeEmitter], seeds::program = wormholeProgram
+        let (sequence_pda_key, _) = Pubkey::find_program_address(
+            &[b"Sequence", &emitter_pda_key.to_bytes()],
+            &WORMHOLE_PID,
+        );
+
+        println!(
+            r"
+        accumulator_message_pda: {accumulator_message_pda:?}
+        emitter_pda_key: {emitter_pda_key:?}
+        sequence_pda_key: {sequence_pda_key:?}
+        "
+        );
     }
 }

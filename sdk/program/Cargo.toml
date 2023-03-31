@@ -19,12 +19,15 @@ bs58 = "0.4.0"
 bytemuck = { version = "1.7.2", features = ["derive"] }
 bv = { version = "0.11.1", features = ["serde"] }
 itertools =  "0.10.1"
+fast-math = "0.1"
+hex = { version = "0.4.3", features = ["serde"] }
 lazy_static = "1.4.0"
 log = "0.4.14"
 num-derive = "0.3"
 num-traits = "0.2"
 rustversion = "1.0.3"
 serde = "1.0.112"
+schemars = "0.8.8"
 serde_bytes = "0.11"
 serde_derive = "1.0.103"
 sha2 = "0.10.0"
@@ -32,6 +35,7 @@ sha3 = "0.10.0"
 solana-frozen-abi = { path = "../../frozen-abi", version = "=1.13.6" }
 solana-frozen-abi-macro = { path = "../../frozen-abi/macro", version = "=1.13.6" }
 solana-sdk-macro = { path = "../macro", version = "=1.13.6" }
+solana-pyth = { path = "../../pyth", version = "=1.13.6" }
 thiserror = "1.0"
 
 [target.'cfg(not(target_arch = "bpf"))'.dependencies]

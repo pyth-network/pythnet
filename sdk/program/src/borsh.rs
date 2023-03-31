@@ -1,6 +1,6 @@
 #![allow(clippy::integer_arithmetic)]
 //! Borsh utils
-use {
+pub use {
     borsh::{
         maybestd::io::{Error, Write},
         schema::{BorshSchema, Declaration, Definition, Fields},
