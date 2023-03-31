@@ -56,6 +56,7 @@ members = [
     "programs/stake",
     "programs/vote",
     "programs/zk-token-proof",
+    "pyth",
     "rayon-threadlimit",
     "rbpf-cli",
     "remote-wallet",
@@ -88,8 +89,10 @@ members = [
 exclude = [
     "programs/bpf",
     "programs/sbf",
-    "geyser",
 ]
 
 # This prevents a Travis CI error when building for Windows.
 resolver = "2"
+
+[patch.crates-io]
+serde_wormhole = { git = "https://github.com/wormhole-foundation/wormhole" }
