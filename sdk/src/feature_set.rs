@@ -423,6 +423,58 @@ pub mod check_syscall_outputs_do_not_overlap {
     solana_sdk::declare_id!("3uRVPBpyEJRo1emLCrq38eLRFGcu6uKSpUXqGvU8T7SZ");
 }
 
+pub mod enable_bpf_loader_set_authority_checked_ix {
+    solana_sdk::declare_id!("5x3825XS7M2A3Ekbn5VGGkvFoAg5qrRWkTrY4bARP1GL");
+}
+
+pub mod enable_alt_bn128_syscall {
+    solana_sdk::declare_id!("A16q37opZdQMCbe5qJ6xpBB9usykfv8jZaMkxvZQi4GJ");
+}
+
+pub mod enable_program_redeployment_cooldown {
+    solana_sdk::declare_id!("J4HFT8usBxpcF63y46t1upYobJgChmKyZPm5uTBRg25Z");
+}
+
+pub mod commission_updates_only_allowed_in_first_half_of_epoch {
+    solana_sdk::declare_id!("noRuG2kzACwgaY7TVmLRnUNPLKNVQE1fb7X55YWBehp");
+}
+
+pub mod enable_turbine_fanout_experiments {
+    solana_sdk::declare_id!("D31EFnLgdiysi84Woo3of4JMu7VmasUS3Z7j9HYXCeLY");
+}
+
+pub mod disable_turbine_fanout_experiments {
+    solana_sdk::declare_id!("Gz1aLrbeQ4Q6PTSafCZcGWZXz91yVRi7ASFzFEr1U4sa");
+}
+
+pub mod drop_merkle_shreds {
+    solana_sdk::declare_id!("84zy5N23Q9vTZuLc9h1HWUtyM9yCFV2SCmyP9W9C3yHZ");
+}
+
+pub mod keep_merkle_shreds {
+    solana_sdk::declare_id!("HyNQzc7TMNmRhpVHXqDGjpsHzeQie82mDQXSF9hj7nAH");
+}
+
+pub mod move_serialized_len_ptr_in_cpi {
+    solana_sdk::declare_id!("74CoWuBmt3rUVUrCb2JiSTvh6nXyBWUsK4SaMj3CtE3T");
+}
+
+pub mod update_hashes_per_tick {
+    solana_sdk::declare_id!("3uFHb9oKdGfgZGJK9EHaAXN4USvnQtAFC13Fh5gGFS5B");
+}
+
+pub mod enable_big_mod_exp_syscall {
+    solana_sdk::declare_id!("EBq48m8irRKuE7ZnMTLvLg2UuGSqhe8s8oMqnmja1fJw");
+}
+
+pub mod disable_builtin_loader_ownership_chains {
+    solana_sdk::declare_id!("4UDcAfQ6EcA6bdcadkeHpkarkhZGJ7Bpq7wTAiRMjkoi");
+}
+
+pub mod enable_accumulator_sysvar {
+    solana_sdk::declare_id!("BawYFA2oeA4CacxgQgLn6ZwRWDq1ZPXruUuEbko8oPT5");
+}
+
 lazy_static! {
     /// Map of feature identifiers to user-visible description
     pub static ref FEATURE_NAMES: HashMap<Pubkey, &'static str> = [
@@ -523,6 +575,19 @@ lazy_static! {
         (return_none_for_zero_lamport_accounts::id(), "return none for zero lamport accounts #27800"),
         (increase_tx_account_lock_limit::id(), "increase tx account lock limit to 128 #27241"),
         (check_syscall_outputs_do_not_overlap::id(), "check syscall outputs do_not overlap #28600"),
+        (enable_bpf_loader_set_authority_checked_ix::id(), "enable bpf upgradeable loader SetAuthorityChecked instruction #28424"),
+        (enable_alt_bn128_syscall::id(), "add alt_bn128 syscalls #27961"),
+        (enable_program_redeployment_cooldown::id(), "enable program redeployment cooldown #29135"),
+        (commission_updates_only_allowed_in_first_half_of_epoch::id(), "validator commission updates are only allowed in the first half of an epoch #29362"),
+        (enable_turbine_fanout_experiments::id(), "enable turbine fanout experiments #29393"),
+        (disable_turbine_fanout_experiments::id(), "disable turbine fanout experiments #29393"),
+        (drop_merkle_shreds::id(), "drop merkle shreds #29711"),
+        (keep_merkle_shreds::id(), "keep merkle shreds #29711"),
+        (move_serialized_len_ptr_in_cpi::id(), "cpi ignore serialized_len_ptr #29592"),
+        (update_hashes_per_tick::id(), "Update desired hashes per tick on epoch boundary"),
+        (enable_big_mod_exp_syscall::id(), "add big_mod_exp syscall #28503"),
+        (disable_builtin_loader_ownership_chains::id(), "disable builtin loader ownership chains #29956"),
+        (enable_accumulator_sysvar::id(), "enable accumulator sysvar"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
