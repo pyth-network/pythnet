@@ -87,6 +87,7 @@ members = [
 ]
 
 exclude = [
+    "geyser",
     "programs/bpf",
     "programs/sbf",
 ]

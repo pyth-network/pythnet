@@ -12,13 +12,19 @@
 //! In the future it may be desirable to have this plugin write updates to accounts
 //! other than the Accumulator.
 
-use tokio::{sync::mpsc::{Sender, Receiver}, io::AsyncWriteExt};
 use {
     anyhow::Result,
     solana_geyser_plugin_interface::geyser_plugin_interface::{
         GeyserPlugin, GeyserPluginError, ReplicaAccountInfoVersions,
     },
-    std::collections::HashSet,
+    std::{
+        collections::HashSet,
+        io::Write,
+        sync::{
+            mpsc::{channel, Sender},
+            Mutex,
+        },
+    },
 };
 
 /// A PythNet AccountUpdate event containing a 32-byte Pubkey and the updated account data.
@@ -30,13 +36,14 @@ pub struct AccountUpdate {
 
 #[derive(Debug)]
 struct PythNetPlugin {
-    ipc_tx: Sender<AccountUpdate>,
+    tx: Option<Mutex<Sender<AccountUpdate>>>,
 }
 
 lazy_static::lazy_static! {
     static ref ACCOUNT_FILTER: HashSet<[u8; 32]> = {
         let mut set = HashSet::new();
-        set.insert(bs58::decode("SysvarAccum111111111111111111111111").into_vec().unwrap().try_into().unwrap());
+        set.insert(bs58::decode("SysvarAccumu1ator11111111111111111111111111").into_vec().unwrap().try_into().unwrap());
+        set.insert(bs58::decode("3DCXkGuYjg2pGuG4CMdVwp5wAVNm7fdkK353DfxvCrH6").into_vec().unwrap().try_into().unwrap());
         set
     };
 }
@@ -48,52 +55,46 @@ impl GeyserPlugin for PythNetPlugin {
     }
 
     fn on_load(&mut self, _config: &str) -> Result<(), GeyserPluginError> {
-        log::info!("PythNet Plugin Loaded");
+        // Initialize Env Logger Context.
+        env_logger::init();
 
-        // The main application logic requires the tokio runtime to be running. Which it won't be
-        // by default given the Geyser plugin architecture.
-        let rt = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()?;
+        log::info!("PythNet: Plugin Loaded");
 
         // Setup a channel to forward account updates to the IPC pipe.
-        let (tx, rx) = tokio::sync::mpsc::channel(1024);
-        self.ipc_tx = tx;
+        let (tx, rx) = channel();
+        self.tx = Some(Mutex::new(tx));
 
         // This handler asynchronously runs in the background to receive & write account updates to
         // the IPC. The reason for this rather than writing directly in `update_account` is because
         // there is no nice synchronous library for writing to a Unix Domain Socket. Rather than
         // use `libc` and `RawFd` directly, we use the `tokio` library which provides a nice async
         // interface which is easy to reason about.
-        async fn handler(mut rx: Receiver<AccountUpdate>) -> anyhow::Result<()> {
-            // Open a UNIX pipe.
-            let mut ipc = tokio::net::unix::pipe::OpenOptions::new()
-                .open_sender("pythnet.pipe")?;
 
-            // Wait for updates from the Geyser plugin and write them to the IPC pipe.
-            while let Some(update) = rx.recv().await {
+        // Open a Domain socket using the standard rust stdlib.
+        let mut ipc = {
+            use std::os::unix::net::UnixStream;
+            let path = std::path::Path::new("pythnet.sock");
+            UnixStream::connect(path)?
+        };
+
+        std::thread::spawn(move || {
+            // Wait for updates from the Geyser plugin and write them to the Socket pipe.
+            loop {
+                let update = rx.recv().unwrap();
+
                 // Write the update into a buffer so the IPC write is atomic.
                 let mut buf = Vec::new();
                 let mut cur = std::io::Cursor::new(&mut buf);
-                cur.write_all(&update.addr).await?;
-                cur.write_u32(update.data.len() as u32).await?;
-                cur.write_all(&update.data).await?;
+                let _ = cur.write_all(&update.addr);
+                let _ = cur.write_all(&update.data.len().to_be_bytes());
+                let _ = cur.write_all(&update.data);
 
                 // When failing, we log but don't retry. This is because if the remote end of the
                 // pipe is closed, we don't want to block the Geyser plugin. We may need to revisit
                 // this if we need to avoid any data loss.
-                if let Err(e) = ipc.write_all(&buf).await {
-                    log::error!("Failed to write Update: {}", e);
+                if let Err(e) = ipc.write_all(&buf) {
+                    log::error!("PythNet: Failed to write Update: {}", e);
                 }
-            }
-
-            Ok(())
-        }
-
-        // Spawn a task to write account updates to the IPC pipe.
-        rt.spawn(async move {
-            if let Err(e) = handler(rx).await {
-                log::error!("Fatal PythNet Plugin Error: {}", e);
             }
         });
 
@@ -109,20 +110,42 @@ impl GeyserPlugin for PythNetPlugin {
         // Extract Pubkey/Data from whatever account version we are given.
         let (address, data) = match account {
             ReplicaAccountInfoVersions::V0_0_1(account) => (account.pubkey, account.data),
-            ReplicaAccountInfoVersions::V0_0_2(account) => (account.pubkey, account.data),
         };
 
         // Specifically match only the accounts we care about. Note bs58 is a relatively slow
         // encoding and we should come back and remove this.
         if ACCOUNT_FILTER.contains(address) {
-            self.ipc_tx
-                .try_send(AccountUpdate {
-                    addr: address.try_into().map_err(|_| GeyserPluginError::Custom("Invalid Address".into()))?,
-                    data: data.to_owned(),
-                })
-                .map_err(|_| GeyserPluginError::Custom("Account Update Channel Closed".into()))?;
+            log::info!(
+                "PythNet: Matched Account: {}",
+                bs58::encode(address).into_string()
+            );
+
+            if let Some(ipc_tx) = &mut self.tx {
+                ipc_tx
+                    .lock()
+                    .unwrap()
+                    .send(AccountUpdate {
+                        addr: address.try_into().map_err(|_| {
+                            GeyserPluginError::Custom("PythNet: Invalid Address".into())
+                        })?,
+                        data: data.to_owned(),
+                    })
+                    .map_err(|e| {
+                        GeyserPluginError::Custom(
+                            format!("PythNet: Account Update Channel Closed {}", e).into(),
+                        )
+                    })?;
+            }
         }
 
         Ok(())
     }
+}
+
+#[no_mangle]
+#[allow(improper_ctypes_definitions)]
+pub unsafe extern "C" fn _create_plugin() -> *mut dyn GeyserPlugin {
+    let plugin = PythNetPlugin { tx: None };
+    let plugin: Box<dyn GeyserPlugin> = Box::new(plugin);
+    Box::into_raw(plugin)
 }
