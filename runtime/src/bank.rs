@@ -2503,14 +2503,17 @@ impl Bank {
         //
         // NOTE: This is set to the Syvar temporarily but will be changed to the Accumulator
         // program once it is deployed with an official address.
+        let accumulator_program =
+            Pubkey::from_str("85CXHH71gNyww8NJ5FQQBBvB7UbMdSMMH4ihi2xXgen").unwrap();
+
         let accounts = self
-            .get_program_accounts(&sysvar::accumulator::id(), &ScanConfig::new(true))
+            .get_program_accounts(&accumulator_program, &ScanConfig::new(true))
             .unwrap();
 
         // Filter accounts that don't match the Anchor sighash.
         let accounts = accounts.iter().filter(|(_, account)| {
             // Remove accounts that do not start with the expected Anchor sighash.
-            let preimage = b"account:AccumulatorInput";
+            let preimage = b"account:MessageBuffer";
             let mut sighash = [0u8; 8];
             let mut expected_sighash = [0u8; 8];
             sighash.copy_from_slice(&account.data()[..8]);
