@@ -2483,6 +2483,8 @@ impl Bank {
     /// - Functionality is kept in the `solana-pyth` library to contain our new dependencies.
     /// - This update will incur a performance hit on each slot, so must be kept efficient.
     /// - Focused on Merkle temporarily and will be generalized to the Accumulator trait.
+    ///
+    /// TODO: Remove dangerous unwrap() calls.
     fn update_accumulator(&self) {
         use {
             byteorder::{BigEndian, ReadBytesExt},
@@ -2494,8 +2496,7 @@ impl Bank {
         };
 
         // Use the current Clock to determine the index into the accumulator ring buffer.
-        let clock = self.clock();
-        let index = clock.slot % 10_000;
+        let ring_index = (self.clock().slot % 10_000) as u32;
 
         // Find all accounts owned by the Accumulator program using get_program_accounts, and
         // extract the account data.
@@ -2543,7 +2544,7 @@ impl Bank {
         // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
         // for RPC users to select the correct proof for an associated VAA.
         let (accumulator_account, _) = Pubkey::find_program_address(
-            &[b"AccumulatorState", &PYTH_PID, &index.to_be_bytes()],
+            &[b"AccumulatorState", &PYTH_PID, &ring_index.to_be_bytes()],
             &solana_sdk::system_program::id(),
         );
 
@@ -2563,10 +2564,13 @@ impl Bank {
         // Generate a Message owned by Wormhole to be sent cross-chain. This short-circuits the
         // Wormhole message generation code that would normally be called, but the Guardian
         // set filters our messages so this does not pose a security risk.
-        let accumulator = MerkleAccumulator::from_set(accounts).unwrap();
-        self.post_accumulator_attestation(accumulator);
+        if let Some(accumulator) = MerkleAccumulator::from_set(accounts) {
+            self.post_accumulator_attestation(accumulator);
+        }
     }
 
+    /// TODO: Remove dangerous unwrap() calls.
+    /// TODO: Safe integer conversion checks if any are missed.
     fn post_accumulator_attestation(
         &self,
         acc: solana_pyth::accumulators::merkle::MerkleAccumulator,
@@ -2578,6 +2582,9 @@ impl Bank {
             },
             solana_sdk::borsh::BorshSerialize,
         };
+
+        // Calculate the offset into the Accumulator ring buffer.
+        let ring_index = (self.clock().slot % 10_000) as u32;
 
         // Wormhole uses a Sequence account that is incremented each time a message is posted. As
         // we aren't calling Wormhole we need to bump this ourselves. If it doesn't exist, we just
@@ -2604,7 +2611,7 @@ impl Bank {
                 sequence: sequence.sequence,
                 emitter_chain: 26,
                 emitter_address: ACCUMULATOR_EMITTER_ADDR,
-                payload: acc.try_to_vec().unwrap(),
+                payload: acc.serialize(ring_index),
             },
         };
 
