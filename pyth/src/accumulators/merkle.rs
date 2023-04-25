@@ -7,7 +7,6 @@ use {
             keccak256::Keccak256,
             Hasher,
         },
-        PriceId,
     },
     borsh::{
         BorshDeserialize,
@@ -32,14 +31,23 @@ const LEAF_PREFIX: &[u8] = &[0];
 const NODE_PREFIX: &[u8] = &[1];
 
 macro_rules! hash_leaf {
-    {$x:ty, $d:ident} => {
+    {$x:ty, $d:expr} => {
         <$x as Hasher>::hashv(&[LEAF_PREFIX, $d])
     }
 }
 
 macro_rules! hash_node {
-    {$x:ty, $l:ident, $r:ident} => {
+    {$x:ty, $l:expr, $r:expr} => {
         <$x as Hasher>::hashv(&[NODE_PREFIX, $l.as_ref(), $r.as_ref()])
+    }
+}
+
+#[derive(Clone, Default, Debug, PartialEq, Eq, Serialize)]
+pub struct MerklePath<H: Hasher>(Vec<H::Hash>);
+
+impl<H: Hasher> MerklePath<H> {
+    pub fn new(path: Vec<H::Hash>) -> Self {
+        Self(path)
     }
 }
 
@@ -52,9 +60,31 @@ macro_rules! hash_node {
     Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, Default,
 )]
 pub struct MerkleAccumulator<H: Hasher = Keccak256> {
+    pub root:  H::Hash,
     #[serde(skip)]
-    pub nodes:      Vec<H::Hash>,
-    pub leaf_count: usize,
+    pub nodes: Vec<H::Hash>,
+}
+
+// Layout:
+//
+// ```
+// 4 bytes:  magic number
+// 1 byte:   update type
+// 4 byte:   storage id
+// 32 bytes: root hash
+// ```
+//
+// TODO: This code does not belong to MerkleAccumulator, we should be using the wire data types in
+// calling code to wrap this value.
+impl<'a, H: Hasher + 'a> MerkleAccumulator<H> {
+    pub fn serialize(&self, storage: u32) -> Vec<u8> {
+        let mut serialized = vec![];
+        serialized.extend_from_slice(0x41555756u32.to_be_bytes().as_ref());
+        serialized.extend_from_slice(0u8.to_be_bytes().as_ref());
+        serialized.extend_from_slice(storage.to_be_bytes().as_ref());
+        serialized.extend_from_slice(self.root.as_ref());
+        serialized
+    }
 }
 
 impl<'a, H: Hasher + 'a> Accumulator<'a> for MerkleAccumulator<H> {
@@ -62,161 +92,68 @@ impl<'a, H: Hasher + 'a> Accumulator<'a> for MerkleAccumulator<H> {
 
     fn from_set(items: impl Iterator<Item = &'a [u8]>) -> Option<Self> {
         let items: Vec<H::Hash> = items.map(|i| hash_leaf!(H, i)).collect();
-        Some(Self::new(&items))
+        Self::new(&items)
     }
 
     fn prove(&'a self, item: &[u8]) -> Option<Self::Proof> {
         let item = hash_leaf!(H, item);
         let index = self.nodes.iter().position(|i| i == &item)?;
-        self.find_path(index)
+        Some(self.find_path(index))
     }
 
     fn check(&'a self, proof: Self::Proof, item: &[u8]) -> bool {
-        let item = hash_leaf!(H, item);
-        proof.validate(item)
+        let mut current = hash_leaf!(H, item);
+        for h in proof.0 {
+            current = hash_node!(H, current, h);
+        }
+        current == self.root
     }
 }
 
 // This code is adapted from the solana-merkle-tree crate to use a generic hasher.
 impl<H: Hasher> MerkleAccumulator<H> {
-    fn calculate_vec_capacity(leaf_count: usize) -> usize {
-        if leaf_count > 0 {
-            fast_math::log2_raw(leaf_count as f32) as usize + 2 * leaf_count + 1
-        } else {
-            0
-        }
-    }
-
-    pub fn new(items: &[H::Hash]) -> Self {
-        let mut mt = Self {
-            nodes:      Vec::with_capacity(Self::calculate_vec_capacity(items.len())),
-            leaf_count: items.len(),
-        };
-
-        // Create leaf nodes and add them to the nodes vec of MerkleTree
-        for item in items {
-            mt.nodes.push(*item);
-        }
-
-        let mut prev_level_len = items.len();
-        let mut prev_level_start = 0;
-
-        // Compute intermediate nodes for the rest of the tree.
-        while prev_level_len > 1 {
-            let mut level_nodes = vec![];
-
-            // Iterate over the previous level nodes two at a time
-            for chunk in
-                mt.nodes[prev_level_start..prev_level_start + prev_level_len].chunks_exact(2)
-            {
-                let lsib: &H::Hash = &chunk[0];
-                let rsib: &H::Hash = &chunk[(chunk.len() == 2) as usize];
-                level_nodes.push(hash_node!(H, lsib, rsib));
-            }
-
-            mt.nodes.extend_from_slice(&level_nodes);
-            prev_level_start += prev_level_len;
-            prev_level_len = level_nodes.len();
-        }
-
-        mt
-    }
-
-    pub fn get_root(&self) -> Option<&H::Hash> {
-        self.nodes.iter().last()
-    }
-
-    #[inline]
-    fn next_level_length(level_length: usize) -> usize {
-        match level_length {
-            1 => 0,
-            _ => (level_length + 1) / 2,
-        }
-    }
-
-    pub fn find_path(&self, index: usize) -> Option<MerklePath<H>> {
-        if index >= self.leaf_count {
+    pub fn new(items: &[H::Hash]) -> Option<Self> {
+        if items.is_empty() {
             return None;
         }
 
-        let mut level_length = self.leaf_count;
-        let mut level_start = 0;
-        let mut path = MerklePath::<H>::default();
-        let mut node_index = index;
-        let mut lsib = None;
-        let mut rsib = None;
+        let depth = (items.len() as f64).log2().ceil() as u32;
+        let mut tree: Vec<H::Hash> = Vec::with_capacity(1 << (depth + 1));
 
-        while level_length > 0 {
-            let level = &self.nodes[level_start..(level_start + level_length)];
-            let target = level[node_index];
-
-            if lsib.is_some() || rsib.is_some() {
-                path.push(MerkleNode::new(target, lsib, rsib));
-            }
-
-            if node_index % 2 == 0 {
-                lsib = None;
-                rsib = level.get(node_index + 1).copied().or(Some(target));
+        // Filling the leaf hashes
+        for i in 0..(1 << depth) {
+            if i < items.len() {
+                tree[(1 << depth) + i] = hash_leaf!(H, items[i].as_ref());
             } else {
-                lsib = Some(level[node_index - 1]);
-                rsib = None;
+                tree[(1 << depth) + i] = hash_leaf!(H, "".as_ref());
             }
-
-            node_index /= 2;
-            level_start += level_length;
-            level_length = Self::next_level_length(level_length);
         }
 
-        Some(path)
-    }
-}
-
-#[derive(Clone, Default, Debug, PartialEq, Eq, Serialize)]
-pub struct MerklePath<H: Hasher>(Vec<MerkleNode<H>>);
-
-impl<H: Hasher> MerklePath<H> {
-    pub fn push(&mut self, entry: MerkleNode<H>) {
-        self.0.push(entry)
-    }
-
-    pub fn validate(&self, candidate: H::Hash) -> bool {
-        let result = self.0.iter().try_fold(candidate, |candidate, pe| {
-            let lsib = &pe.1.unwrap_or(candidate);
-            let rsib = &pe.2.unwrap_or(candidate);
-            let hash = hash_node!(H, lsib, rsib);
-
-            if hash == pe.0 {
-                Some(hash)
-            } else {
-                None
+        // Filling the node hashes from bottom to top
+        for k in (1..=depth).rev() {
+            let level = k - 1;
+            let level_num_nodes = 1 << level;
+            for i in 0..level_num_nodes {
+                let id = (1 << level) + i;
+                tree[id] = hash_node!(H, &tree[id * 2], &tree[id * 2 + 1]);
             }
-        });
-        matches!(result, Some(_))
+        }
+
+        Some(Self {
+            root:  tree[1],
+            nodes: tree,
+        })
     }
-}
 
-#[derive(Clone, Default, Debug, PartialEq, Eq, Serialize)]
-pub struct MerkleNode<H: Hasher>(H::Hash, Option<H::Hash>, Option<H::Hash>);
-
-impl<H: Hasher> MerkleNode<H> {
-    pub fn new(
-        target: H::Hash,
-        left_sibling: Option<H::Hash>,
-        right_sibling: Option<H::Hash>,
-    ) -> Self {
-        assert!(left_sibling.is_none() ^ right_sibling.is_none());
-        Self(target, left_sibling, right_sibling)
-    }
-}
-
-#[derive(Serialize, PartialEq, Eq, Default)]
-pub struct PriceProofs<H: Hasher>(Vec<(PriceId, MerklePath<H>)>);
-
-impl<H: Hasher> PriceProofs<H> {
-    pub fn new(price_proofs: &[(PriceId, MerklePath<H>)]) -> Self {
-        let mut price_proofs = price_proofs.to_vec();
-        price_proofs.sort_by(|(a, _), (b, _)| a.cmp(b));
-        Self(price_proofs)
+    fn find_path(&self, index: usize) -> MerklePath<H> {
+        let mut path = Vec::new();
+        let depth = (self.nodes.len() as f64).log2().ceil() as u32;
+        let mut idx = (1 << depth) + index;
+        while idx > 1 {
+            path.push(self.nodes[idx ^ 1].clone());
+            idx /= 2;
+        }
+        MerklePath::new(path)
     }
 }
 
