@@ -2527,14 +2527,14 @@ impl Bank {
             .flat_map(|(_, account)| {
                 let data = account.data();
                 let mut cursor = std::io::Cursor::new(&data[10..]);
-                let header_len = cursor.read_u16::<BigEndian>().unwrap();
+                let header_len = cursor.read_u16::<LittleEndian>().unwrap();
                 let mut header_begin = header_len;
-                let mut header_end = cursor.read_u16::<BigEndian>().unwrap();
+                let mut header_end = cursor.read_u16::<LittleEndian>().unwrap();
                 let mut inputs = Vec::new();
                 while header_end != 0 {
                     let end_offset = header_len + header_end;
-                    let accumulator_input_data = &data[header_begin as usize..header_end as usize];
-                    header_end = cursor.read_u16::<BigEndian>().unwrap();
+                    let accumulator_input_data = &data[header_begin as usize..end_offset as usize];
+                    header_end = cursor.read_u16::<LittleEndian>().unwrap();
                     header_begin = end_offset;
                     inputs.push(accumulator_input_data);
                 }

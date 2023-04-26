@@ -3,19 +3,10 @@
 use {
     crate::{
         accumulators::Accumulator,
-        hashers::{
-            keccak256::Keccak256,
-            Hasher,
-        },
+        hashers::{keccak256::Keccak256, Hasher},
     },
-    borsh::{
-        BorshDeserialize,
-        BorshSerialize,
-    },
-    serde::{
-        Deserialize,
-        Serialize,
-    },
+    borsh::{BorshDeserialize, BorshSerialize},
+    serde::{Deserialize, Serialize},
 };
 
 // We need to discern between leaf and intermediate nodes to prevent trivial second pre-image
@@ -60,7 +51,7 @@ impl<H: Hasher> MerklePath<H> {
     Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize, Serialize, Deserialize, Default,
 )]
 pub struct MerkleAccumulator<H: Hasher = Keccak256> {
-    pub root:  H::Hash,
+    pub root: H::Hash,
     #[serde(skip)]
     pub nodes: Vec<H::Hash>,
 }
@@ -118,7 +109,7 @@ impl<H: Hasher> MerkleAccumulator<H> {
         }
 
         let depth = (items.len() as f64).log2().ceil() as u32;
-        let mut tree: Vec<H::Hash> = Vec::with_capacity(1 << (depth + 1));
+        let mut tree: Vec<H::Hash> = vec![Default::default(); 1 << (depth + 1)];
 
         // Filling the leaf hashes
         for i in 0..(1 << depth) {
@@ -140,7 +131,7 @@ impl<H: Hasher> MerkleAccumulator<H> {
         }
 
         Some(Self {
-            root:  tree[1],
+            root: tree[1],
             nodes: tree,
         })
     }
@@ -161,25 +152,22 @@ impl<H: Hasher> MerkleAccumulator<H> {
 mod test {
     use {
         super::*,
-        std::{
-            collections::HashSet,
-            mem::size_of,
-        },
+        std::{collections::HashSet, mem::size_of},
     };
 
     #[derive(Default, Clone, Debug, borsh::BorshSerialize)]
     struct PriceAccount {
-        pub id:         u64,
-        pub price:      u64,
+        pub id: u64,
+        pub price: u64,
         pub price_expo: u64,
-        pub ema:        u64,
-        pub ema_expo:   u64,
+        pub ema: u64,
+        pub ema_expo: u64,
     }
 
     #[derive(Default, Debug, borsh::BorshSerialize)]
     struct PriceOnly {
         pub price_expo: u64,
-        pub price:      u64,
+        pub price: u64,
 
         pub id: u64,
     }
@@ -187,8 +175,8 @@ mod test {
     impl From<PriceAccount> for PriceOnly {
         fn from(other: PriceAccount) -> Self {
             Self {
-                id:         other.id,
-                price:      other.price,
+                id: other.id,
+                price: other.price,
                 price_expo: other.price_expo,
             }
         }
@@ -201,11 +189,11 @@ mod test {
         // Create some random elements (converted to bytes). All accumulators store arbitrary bytes so
         // that we can target any account (or subset of accounts).
         let price_account_a = PriceAccount {
-            id:         1,
-            price:      100,
+            id: 1,
+            price: 100,
             price_expo: 2,
-            ema:        50,
-            ema_expo:   1,
+            ema: 50,
+            ema_expo: 1,
         };
         let item_a = borsh::BorshSerialize::try_to_vec(&price_account_a).unwrap();
 
