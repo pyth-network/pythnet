@@ -2487,7 +2487,7 @@ impl Bank {
     /// TODO: Remove dangerous unwrap() calls.
     fn update_accumulator(&self) {
         use {
-            byteorder::{BigEndian, ReadBytesExt},
+            byteorder::{LittleEndian, ReadBytesExt},
             solana_pyth::{
                 accumulators::{merkle::MerkleAccumulator, Accumulator},
                 PYTH_PID,
@@ -2504,7 +2504,7 @@ impl Bank {
         // NOTE: This is set to the Syvar temporarily but will be changed to the Accumulator
         // program once it is deployed with an official address.
         let accumulator_program =
-            Pubkey::from_str("85CXHH71gNyww8NJ5FQQBBvB7UbMdSMMH4ihi2xXgen").unwrap();
+            Pubkey::from_str("Vbmv1jt4vyuqBZcpYPpnVhrqVe5e6ZPb6JxDcffRHUM").unwrap();
 
         let accounts = self
             .get_program_accounts(&accumulator_program, &ScanConfig::new(true))
@@ -2527,14 +2527,14 @@ impl Bank {
             .flat_map(|(_, account)| {
                 let data = account.data();
                 let mut cursor = std::io::Cursor::new(&data[10..]);
-                let header_len = cursor.read_u16::<BigEndian>().unwrap();
+                let header_len = cursor.read_u16::<LittleEndian>().unwrap();
                 let mut header_begin = header_len;
-                let mut header_end = cursor.read_u16::<BigEndian>().unwrap();
+                let mut header_end = cursor.read_u16::<LittleEndian>().unwrap();
                 let mut inputs = Vec::new();
                 while header_end != 0 {
                     let end_offset = header_len + header_end;
-                    let accumulator_input_data = &data[header_begin as usize..header_end as usize];
-                    header_end = cursor.read_u16::<BigEndian>().unwrap();
+                    let accumulator_input_data = &data[header_begin as usize..end_offset as usize];
+                    header_end = cursor.read_u16::<LittleEndian>().unwrap();
                     header_begin = end_offset;
                     inputs.push(accumulator_input_data);
                 }
