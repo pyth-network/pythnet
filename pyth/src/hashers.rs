@@ -28,6 +28,7 @@ where
         + Debug
         + Default
         + Eq
+        + PartialOrd
         + PartialEq
         + serde::Serialize
         + for<'a> Deserialize<'a>;

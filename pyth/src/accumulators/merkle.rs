@@ -27,19 +27,28 @@ use {
 //
 // - https://flawed.net.nz/2018/02/21/attacking-merkle-trees-with-a-second-preimage-attack
 // - https://en.wikipedia.org/wiki/Merkle_tree#Second_preimage_attack
+//
+// NOTE: We use a NULL prefix for leaf nodes to distinguish them from the empty message (""), while
+// there is no path that allows empty messages this is a safety measure to prevent future
+// vulnerabilities being introduced.
 const LEAF_PREFIX: &[u8] = &[0];
 const NODE_PREFIX: &[u8] = &[1];
+const NULL_PREFIX: &[u8] = &[2];
 
-macro_rules! hash_leaf {
-    {$x:ty, $d:expr} => {
-        <$x as Hasher>::hashv(&[LEAF_PREFIX, $d])
-    }
+fn hash_leaf<H: Hasher>(leaf: &[u8]) -> H::Hash {
+    H::hashv(&[LEAF_PREFIX, leaf])
 }
 
-macro_rules! hash_node {
-    {$x:ty, $l:expr, $r:expr} => {
-        <$x as Hasher>::hashv(&[NODE_PREFIX, $l.as_ref(), $r.as_ref()])
-    }
+fn hash_node<H: Hasher>(l: &H::Hash, r: &H::Hash) -> H::Hash {
+    H::hashv(&[
+        NODE_PREFIX,
+        (if l <= r { l } else { r }).as_ref(),
+        (if l <= r { r } else { l }).as_ref(),
+    ])
+}
+
+fn hash_null<H: Hasher>() -> H::Hash {
+    H::hashv(&[NULL_PREFIX])
 }
 
 #[derive(Clone, Default, Debug, PartialEq, Eq, Serialize)]
@@ -91,20 +100,20 @@ impl<'a, H: Hasher + 'a> Accumulator<'a> for MerkleAccumulator<H> {
     type Proof = MerklePath<H>;
 
     fn from_set(items: impl Iterator<Item = &'a [u8]>) -> Option<Self> {
-        let items: Vec<H::Hash> = items.map(|i| hash_leaf!(H, i)).collect();
+        let items: Vec<H::Hash> = items.map(|i| hash_leaf::<H>(i)).collect();
         Self::new(&items)
     }
 
     fn prove(&'a self, item: &[u8]) -> Option<Self::Proof> {
-        let item = hash_leaf!(H, item);
+        let item = hash_leaf::<H>(item);
         let index = self.nodes.iter().position(|i| i == &item)?;
         Some(self.find_path(index))
     }
 
     fn check(&'a self, proof: Self::Proof, item: &[u8]) -> bool {
-        let mut current = hash_leaf!(H, item);
-        for h in proof.0 {
-            current = hash_node!(H, current, h);
+        let mut current = hash_leaf::<H>(item);
+        for hash in proof.0 {
+            current = hash_node::<H>(&current, &hash);
         }
         current == self.root
     }
@@ -123,9 +132,9 @@ impl<H: Hasher> MerkleAccumulator<H> {
         // Filling the leaf hashes
         for i in 0..(1 << depth) {
             if i < items.len() {
-                tree[(1 << depth) + i] = hash_leaf!(H, items[i].as_ref());
+                tree[(1 << depth) + i] = hash_leaf::<H>(items[i].as_ref());
             } else {
-                tree[(1 << depth) + i] = hash_leaf!(H, "".as_ref());
+                tree[(1 << depth) + i] = hash_null::<H>();
             }
         }
 
@@ -135,7 +144,7 @@ impl<H: Hasher> MerkleAccumulator<H> {
             let level_num_nodes = 1 << level;
             for i in 0..level_num_nodes {
                 let id = (1 << level) + i;
-                tree[id] = hash_node!(H, &tree[id * 2], &tree[id * 2 + 1]);
+                tree[id] = hash_node::<H>(&tree[id * 2], &tree[id * 2 + 1]);
             }
         }
 
