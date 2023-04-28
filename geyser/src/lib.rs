@@ -20,6 +20,7 @@ use {
     std::{
         collections::HashSet,
         io::Write,
+        os::unix::net::UnixListener,
         sync::{
             mpsc::{channel, Sender},
             Mutex,
@@ -57,43 +58,53 @@ impl GeyserPlugin for PythNetPlugin {
     fn on_load(&mut self, _config: &str) -> Result<(), GeyserPluginError> {
         // Initialize Env Logger Context.
         env_logger::init();
-
         log::info!("PythNet: Plugin Loaded");
 
         // Setup a channel to forward account updates to the IPC pipe.
         let (tx, rx) = channel();
         self.tx = Some(Mutex::new(tx));
 
-        // This handler asynchronously runs in the background to receive & write account updates to
-        // the IPC. The reason for this rather than writing directly in `update_account` is because
-        // there is no nice synchronous library for writing to a Unix Domain Socket. Rather than
-        // use `libc` and `RawFd` directly, we use the `tokio` library which provides a nice async
-        // interface which is easy to reason about.
-
-        // Open a Domain socket using the standard rust stdlib.
-        let mut ipc = {
-            use std::os::unix::net::UnixStream;
+        let socket = {
             let path = std::path::Path::new("pythnet.sock");
-            UnixStream::connect(path)?
+            if path.exists() {
+                std::fs::remove_file(path)?;
+            }
+            UnixListener::bind(path)?
         };
 
         std::thread::spawn(move || {
-            // Wait for updates from the Geyser plugin and write them to the Socket pipe.
+            // Open a Unix Domain Socket to write updates to, the other side of this channel can be
+            // any program interested in program updates, but is mainly intended to be used by a
+            // hermes instance.
             loop {
-                let update = rx.recv().unwrap();
+                match socket.accept() {
+                    Err(e) => {
+                        log::error!("PythNet: Failed to accept connection: {}", e);
+                        std::thread::sleep(std::time::Duration::from_secs(1));
+                    }
 
-                // Write the update into a buffer so the IPC write is atomic.
-                let mut buf = Vec::new();
-                let mut cur = std::io::Cursor::new(&mut buf);
-                let _ = cur.write_all(&update.addr);
-                let _ = cur.write_all(&update.data.len().to_be_bytes());
-                let _ = cur.write_all(&update.data);
+                    Ok((mut stream, _addr)) => {
+                        loop {
+                            let update = rx.recv().unwrap();
 
-                // When failing, we log but don't retry. This is because if the remote end of the
-                // pipe is closed, we don't want to block the Geyser plugin. We may need to revisit
-                // this if we need to avoid any data loss.
-                if let Err(e) = ipc.write_all(&buf) {
-                    log::error!("PythNet: Failed to write Update: {}", e);
+                            // Write the update into a buffer so the IPC write is atomic.
+                            let mut buf = Vec::new();
+                            let mut cur = std::io::Cursor::new(&mut buf);
+                            let _ = cur.write_all(&update.addr);
+                            let _ = cur.write_all(&update.data.len().to_be_bytes());
+                            let _ = cur.write_all(&update.data);
+
+                            // The assumption here is that we have a valid Unix Domain Socket connection to
+                            // write to, if this fails, it is likely the other side of the pipe has closed.
+                            // We break out of the loop here to attempt to wait for new connections. During
+                            // this period we will miss writes to the pipe and the consuming side should
+                            // consider what to do about data loss.
+                            if let Err(e) = stream.write_all(&buf) {
+                                log::error!("PythNet: Failed to write Update: {}", e);
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         });
