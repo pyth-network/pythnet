@@ -118,7 +118,7 @@ impl<H: Hasher> MerkleAccumulator<H> {
         }
 
         let depth = (items.len() as f64).log2().ceil() as u32;
-        let mut tree: Vec<H::Hash> = Vec::with_capacity(1 << (depth + 1));
+        let mut tree: Vec<H::Hash> = vec![Default::default(); 1 << (depth + 1)];
 
         // Filling the leaf hashes
         for i in 0..(1 << depth) {

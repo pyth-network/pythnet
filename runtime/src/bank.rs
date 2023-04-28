@@ -2487,7 +2487,7 @@ impl Bank {
     /// TODO: Remove dangerous unwrap() calls.
     fn update_accumulator(&self) {
         use {
-            byteorder::{LittleEndian, ReadBytesExt},
+            byteorder::ReadBytesExt,
             solana_pyth::{
                 accumulators::{merkle::MerkleAccumulator, Accumulator},
                 PYTH_PID,
@@ -2521,23 +2521,29 @@ impl Bank {
             sighash == expected_sighash
         });
 
-        // Using the offsets in each Account, extract the various data versions from the account.
-        // We deduplicate this result because the accumulator expects a set.
+        // This code, using the offsets in each Account, extracts the various data versions from
+        // the account. We deduplicate this result because the accumulator expects a set.
         let accounts = accounts
             .flat_map(|(_, account)| {
                 let data = account.data();
-                let mut cursor = std::io::Cursor::new(&data[10..]);
-                let header_len = cursor.read_u16::<LittleEndian>().unwrap();
+                let mut cursor = std::io::Cursor::new(&data);
+                let _sighash = cursor.read_u64::<LittleEndian>().unwrap();
+                let _bump = cursor.read_u8().unwrap();
+                let _version = cursor.read_u8().unwrap();
+                let header_len = cursor.read_u16::<LittleEndian>().unwrap() - 8;
                 let mut header_begin = header_len;
-                let mut header_end = cursor.read_u16::<LittleEndian>().unwrap();
                 let mut inputs = Vec::new();
-                while header_end != 0 {
-                    let end_offset = header_len + header_end;
+                while let Some(end) = cursor.read_u16::<LittleEndian>().ok() {
+                    if end == 0 {
+                        break;
+                    }
+
+                    let end_offset = header_len + end;
                     let accumulator_input_data = &data[header_begin as usize..end_offset as usize];
-                    header_end = cursor.read_u16::<LittleEndian>().unwrap();
-                    header_begin = end_offset;
                     inputs.push(accumulator_input_data);
+                    header_begin = end_offset;
                 }
+
                 inputs
             })
             .sorted_unstable()
@@ -2552,7 +2558,8 @@ impl Bank {
         );
 
         let accumulator_data = {
-            let data = accounts.clone().collect::<Vec<_>>().try_to_vec().unwrap();
+            let data = accounts.clone().collect::<Vec<_>>();
+            let data = data.try_to_vec().unwrap();
             let owner = solana_sdk::system_program::id();
             let balance = self.get_minimum_balance_for_rent_exemption(data.len());
             let mut account = AccountSharedData::new(balance, data.len(), &owner);
