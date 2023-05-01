@@ -2530,7 +2530,7 @@ impl Bank {
                 let _sighash = cursor.read_u64::<LittleEndian>().unwrap();
                 let _bump = cursor.read_u8().unwrap();
                 let _version = cursor.read_u8().unwrap();
-                let header_len = cursor.read_u16::<LittleEndian>().unwrap() - 8;
+                let header_len = cursor.read_u16::<LittleEndian>().unwrap();
                 let mut header_begin = header_len;
                 let mut inputs = Vec::new();
                 while let Some(end) = cursor.read_u16::<LittleEndian>().ok() {
