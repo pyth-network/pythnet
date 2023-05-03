@@ -100,7 +100,7 @@ impl<'a, H: Hasher + 'a> Accumulator<'a> for MerkleAccumulator<H> {
     type Proof = MerklePath<H>;
 
     fn from_set(items: impl Iterator<Item = &'a [u8]>) -> Option<Self> {
-        let items: Vec<H::Hash> = items.map(|i| hash_leaf::<H>(i)).collect();
+        let items: Vec<&[u8]> = items.collect();
         Self::new(&items)
     }
 
@@ -121,12 +121,12 @@ impl<'a, H: Hasher + 'a> Accumulator<'a> for MerkleAccumulator<H> {
 
 // This code is adapted from the solana-merkle-tree crate to use a generic hasher.
 impl<H: Hasher> MerkleAccumulator<H> {
-    pub fn new(items: &[H::Hash]) -> Option<Self> {
+    pub fn new(items: &[&[u8]]) -> Option<Self> {
         if items.is_empty() {
             return None;
         }
 
-        let depth = (items.len() as f64).log2().ceil() as u32;
+        let depth = items.len().next_power_of_two().trailing_zeros();
         let mut tree: Vec<H::Hash> = vec![Default::default(); 1 << (depth + 1)];
 
         // Filling the leaf hashes
@@ -154,13 +154,11 @@ impl<H: Hasher> MerkleAccumulator<H> {
         })
     }
 
-    fn find_path(&self, index: usize) -> MerklePath<H> {
+    fn find_path(&self, mut index: usize) -> MerklePath<H> {
         let mut path = Vec::new();
-        let depth = (self.nodes.len() as f64).log2().ceil() as u32;
-        let mut idx = (1 << depth) + index;
-        while idx > 1 {
-            path.push(self.nodes[idx ^ 1].clone());
-            idx /= 2;
+        while index > 1 {
+            path.push(self.nodes[index ^ 1].clone());
+            index /= 2;
         }
         MerklePath::new(path)
     }
@@ -170,6 +168,8 @@ impl<H: Hasher> MerkleAccumulator<H> {
 mod test {
     use {
         super::*,
+        proptest::prelude::*,
+        rand::RngCore,
         std::{
             collections::HashSet,
             mem::size_of,
@@ -203,6 +203,34 @@ mod test {
         }
     }
 
+    #[derive(Debug)]
+    struct MerkleAccumulatorDataWrapper {
+        pub accumulator: MerkleAccumulator,
+        pub data:        HashSet<Vec<u8>>,
+    }
+
+    impl Arbitrary for MerkleAccumulatorDataWrapper {
+        type Parameters = usize;
+
+        fn arbitrary_with(size: Self::Parameters) -> Self::Strategy {
+            let size = size.saturating_add(1);
+            prop::collection::vec(
+                prop::collection::vec(any::<u8>(), 1..=10),
+                size..=size.saturating_add(100),
+            )
+            .prop_map(|v| {
+                let data: HashSet<Vec<u8>> = v.into_iter().collect();
+                let accumulator =
+                    MerkleAccumulator::<Keccak256>::from_set(data.iter().map(|i| i.as_ref()))
+                        .unwrap();
+                MerkleAccumulatorDataWrapper { accumulator, data }
+            })
+            .boxed()
+        }
+
+        type Strategy = BoxedStrategy<Self>;
+    }
+
     #[test]
     fn test_merkle() {
         let mut set: HashSet<&[u8]> = HashSet::new();
@@ -231,27 +259,45 @@ mod test {
 
         let accumulator = MerkleAccumulator::<Keccak256>::from_set(set.into_iter()).unwrap();
         let proof = accumulator.prove(&item_a).unwrap();
+
         assert!(accumulator.check(proof, &item_a));
         let proof = accumulator.prove(&item_a).unwrap();
-        println!(
-            "proof: {:#?}",
-            proof.0.iter().map(|x| format!("{x:?}")).collect::<Vec<_>>()
-        );
-        println!("accumulator root: {:?}", accumulator.get_root().unwrap());
-        println!(
-            r"
-                Sizes:
-                    MerkleAccumulator::Proof    {:?}
-                    Keccak256Hasher::Hash       {:?}
-                    MerkleNode                  {:?}
-                    MerklePath                  {:?}
+        assert_eq!(size_of::<<Keccak256 as Hasher>::Hash>(), 32);
 
-            ",
-            size_of::<<MerkleAccumulator as Accumulator>::Proof>(),
-            size_of::<<Keccak256 as Hasher>::Hash>(),
-            size_of::<MerkleNode<Keccak256>>(),
-            size_of::<MerklePath<Keccak256>>()
-        );
         assert!(!accumulator.check(proof, &item_d));
+    }
+
+    // We're using proptest to generate arbitrary Merkle trees as part of our fuzzing strategy.
+    // This will help us identify any edge cases or unexpected behavior in the implementation.
+    proptest! {
+        #[test]
+        fn test_merkle_tree(v in any::<MerkleAccumulatorDataWrapper>()) {
+            let accumulator = v.accumulator;
+            let data = v.data;
+            for d in data.iter() {
+                let proof = accumulator.prove(d).unwrap();
+                let mut invalid_proof = proof.clone();
+                invalid_proof.0.push(hash_leaf::<Keccak256>(&[0]));
+                assert!(accumulator.check(proof, d));
+                assert!(!accumulator.check(invalid_proof, d));
+
+            }
+
+            let false_data = data.clone()
+                .into_iter()
+                .map(|d| {
+                    let mut d  = d.to_vec();
+                    d.extend_from_slice(&[0]);
+                    d
+                })
+                .filter(|d| !data.contains(d))
+                .collect::<HashSet<Vec<u8>>>();
+
+
+            for f_d in false_data.iter() {
+                let proof = accumulator.prove(f_d);
+                assert!(proof.is_none());
+            }
+        }
     }
 }
