@@ -5,7 +5,7 @@ use {
     slow_primes::is_prime_miller_rabin,
 };
 
-#[derive(Clone, Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Eq, PartialEq, Serialize)]
 pub struct PrimeHasher {}
 
 impl Hasher for PrimeHasher {

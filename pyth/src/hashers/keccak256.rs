@@ -7,7 +7,7 @@ use {
     },
 };
 
-#[derive(Clone, Default, Debug, Serialize)]
+#[derive(Clone, Default, Debug, Eq, PartialEq, Serialize)]
 pub struct Keccak256 {}
 
 impl Hasher for Keccak256 {

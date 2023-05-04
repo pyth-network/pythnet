@@ -9,6 +9,7 @@ use {
     solana_pyth::PYTH_PID,
     solana_sdk::pubkey::Pubkey,
     std::str::FromStr,
+    std::io::Write,
 };
 
 fn main() {
