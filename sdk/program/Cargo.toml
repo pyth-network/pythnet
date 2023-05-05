@@ -25,6 +25,7 @@ lazy_static = "1.4.0"
 log = "0.4.14"
 num-derive = "0.3"
 num-traits = "0.2"
+pythnet-sdk = { git = "https://github.com/pyth-network/pyth-crosschain", version = "1.13.6" }
 rustversion = "1.0.3"
 serde = "1.0.112"
 schemars = "0.8.8"
@@ -35,7 +36,6 @@ sha3 = "0.10.0"
 solana-frozen-abi = { path = "../../frozen-abi", version = "=1.13.6" }
 solana-frozen-abi-macro = { path = "../../frozen-abi/macro", version = "=1.13.6" }
 solana-sdk-macro = { path = "../macro", version = "=1.13.6" }
-solana-pyth = { path = "../../pyth", version = "=1.13.6" }
 thiserror = "1.0"
 
 [target.'cfg(not(target_arch = "bpf"))'.dependencies]

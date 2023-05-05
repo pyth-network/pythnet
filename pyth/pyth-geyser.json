@@ -1,6 +1,0 @@
-{
-    "libpath": "../geyser/target/release/libpyth_geyser.so",
-    "accounts_selector": {
-        "accounts" : ["*"]
-    }
-}
