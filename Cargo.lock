@@ -3570,7 +3570,7 @@ dependencies = [
 [[package]]
 name = "pythnet-sdk"
 version = "1.13.6"
-source = "git+https://github.com/pyth-network/pyth-crosschain#1902dbaa3080281b4e5b5748df630c0b13cc22ec"
+source = "git+https://github.com/pyth-network/pyth-crosschain#16baae6c992fd0c28b08fd4d84d27090ba0a2b80"
 dependencies = [
  "bincode",
  "borsh",
@@ -4409,7 +4409,7 @@ dependencies = [
 [[package]]
 name = "serde_wormhole"
 version = "0.1.0"
-source = "git+https://github.com/wormhole-foundation/wormhole#cf3791941602ea75b5888d49d362208431910b45"
+source = "git+https://github.com/wormhole-foundation/wormhole#b8b425263b70aee4854feb387e8e9cc6df6d8cad"
 dependencies = [
  "base64 0.13.0",
  "itoa 1.0.1",
@@ -8198,7 +8198,7 @@ dependencies = [
 [[package]]
 name = "wormhole-sdk"
 version = "0.1.0"
-source = "git+https://github.com/wormhole-foundation/wormhole#cf3791941602ea75b5888d49d362208431910b45"
+source = "git+https://github.com/wormhole-foundation/wormhole#b8b425263b70aee4854feb387e8e9cc6df6d8cad"
 dependencies = [
  "anyhow",
  "bstr 1.4.0",

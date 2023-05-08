@@ -71,6 +71,7 @@ use {
     dashmap::DashMap,
     itertools::Itertools,
     log::*,
+    pythnet_sdk::pythnet,
     rand::Rng,
     rayon::{
         iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
@@ -1295,6 +1296,9 @@ enum AccumulatorUpdateError {
 
     #[error("io error")]
     Io(#[from] std::io::Error),
+
+    #[error("could not parse Pubkey from environment")]
+    InvalidEnvPubkey(#[from] solana_sdk::pubkey::ParsePubkeyError),
 }
 
 impl Bank {
@@ -2508,9 +2512,10 @@ impl Bank {
     fn update_accumulator_impl(&self) -> std::result::Result<(), AccumulatorUpdateError> {
         use {
             byteorder::ReadBytesExt,
-            solana_pyth::{
+            pythnet_sdk::{
                 accumulators::{merkle::MerkleAccumulator, Accumulator},
-                PYTH_PID,
+                pythnet::PYTH_PID,
+                MESSAGE_BUFFER_PID,
             },
             solana_sdk::borsh::BorshSerialize,
         };
@@ -2518,15 +2523,16 @@ impl Bank {
         // Use the current Clock to determine the index into the accumulator ring buffer.
         let ring_index = (self.clock().slot % 10_000) as u32;
 
-        // Find all accounts owned by the Accumulator program using get_program_accounts, and
+        // Find all accounts owned by the Message Buffer program using get_program_accounts, and
         // extract the account data.
-        //
-        // NOTE: This is set to the Syvar temporarily but will be changed to the Accumulator
-        // program once it is deployed with an official address.
-        let accumulator_program =
-            Pubkey::from_str("Vbmv1jt4vyuqBZcpYPpnVhrqVe5e6ZPb6JxDcffRHUM").unwrap();
 
-        let accounts = self.get_program_accounts(&accumulator_program, &ScanConfig::new(true))
+        let message_buffer_pid = Self::env_pubkey_or(
+            "MESSAGE_BUFFER_PID",
+            Pubkey::new_from_array(MESSAGE_BUFFER_PID),
+        )?;
+
+        let accounts = self
+            .get_program_accounts(&message_buffer_pid, &ScanConfig::new(true))
             .map_err(|_| AccumulatorUpdateError::GetProgramAccounts)?;
 
         // Filter accounts that don't match the Anchor sighash.
@@ -2571,11 +2577,17 @@ impl Bank {
             .sorted_unstable()
             .dedup();
 
+        let pyth_pid = Self::env_pubkey_or("PYTH_PID", Pubkey::new_from_array(pythnet::PYTH_PID))?;
+
         // We now generate a Proof PDA (Owned by the System Program) to store the resulting Proof
         // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
         // for RPC users to select the correct proof for an associated VAA.
         let (accumulator_account, _) = Pubkey::find_program_address(
-            &[b"AccumulatorState", &PYTH_PID, &ring_index.to_be_bytes()],
+            &[
+                b"AccumulatorState",
+                &pyth_pid.as_ref(),
+                &ring_index.to_be_bytes(),
+            ],
             &solana_sdk::system_program::id(),
         );
 
@@ -2592,7 +2604,7 @@ impl Bank {
         // Wormhole message generation code that would normally be called, but the Guardian
         // set filters our messages so this does not pose a security risk.
         if let Some(accumulator) = MerkleAccumulator::from_set(accounts) {
-            self.post_accumulator_attestation(accumulator)?;
+            self.post_accumulator_attestation(accumulator, ring_index)?;
         }
 
         // Write the Account Set into `accumulator_state` so that the hermes application can
@@ -2605,25 +2617,30 @@ impl Bank {
     /// TODO: Safe integer conversion checks if any are missed.
     fn post_accumulator_attestation(
         &self,
-        acc: solana_pyth::accumulators::merkle::MerkleAccumulator,
+        acc: pythnet_sdk::accumulators::merkle::MerkleAccumulator,
+        ring_index: u32,
     ) -> std::result::Result<(), AccumulatorUpdateError> {
         use {
-            solana_pyth::{
+            pythnet_sdk::{
+                pythnet::{ACCUMULATOR_SEQUENCE_ADDR, WORMHOLE_PID},
                 wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
-                ACCUMULATOR_EMITTER_ADDR, ACCUMULATOR_SEQUENCE_ADDR, WORMHOLE_PID,
+                ACCUMULATOR_EMITTER_ADDRESS,
             },
             solana_sdk::borsh::BorshSerialize,
         };
 
-        // Calculate the offset into the Accumulator ring buffer.
-        let ring_index = (self.clock().slot % 10_000) as u32;
+        let accumulator_sequence_addr = Self::env_pubkey_or(
+            "ACCUMULATOR_SEQUENCE_ADDR",
+            Pubkey::new_from_array(ACCUMULATOR_SEQUENCE_ADDR),
+        )?;
 
         // Wormhole uses a Sequence account that is incremented each time a message is posted. As
         // we aren't calling Wormhole we need to bump this ourselves. If it doesn't exist, we just
         // create it instead.
         let mut sequence: AccumulatorSequenceTracker = {
-            let data = Pubkey::new_from_array(ACCUMULATOR_SEQUENCE_ADDR);
-            let data = self.get_account_with_fixed_root(&data).unwrap_or_default();
+            let data = self
+                .get_account_with_fixed_root(&accumulator_sequence_addr)
+                .unwrap_or_default();
             let data = data.data();
             solana_sdk::borsh::try_from_slice_unchecked(data)
                 .unwrap_or(AccumulatorSequenceTracker { sequence: 0 })
@@ -2642,56 +2659,64 @@ impl Bank {
                 nonce: 0,
                 sequence: sequence.sequence,
                 emitter_chain: 26,
-                emitter_address: ACCUMULATOR_EMITTER_ADDR,
+                emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
                 payload: acc.serialize(ring_index),
             },
         };
 
         info!("msg_data.message: {:?}", message.message);
+        let wormhole_pid =
+            Self::env_pubkey_or("WORMHOLE_PID", Pubkey::new_from_array(WORMHOLE_PID))?;
 
         // Now we can bump and write the Sequence account.
         sequence.sequence += 1;
-        let sequence = sequence.try_to_vec().map_err(|_| AccumulatorUpdateError::FailedSequenceSerialization)?;
+        let sequence = sequence
+            .try_to_vec()
+            .map_err(|_| AccumulatorUpdateError::FailedSequenceSerialization)?;
         let sequence_balance = self.get_minimum_balance_for_rent_exemption(sequence.len());
         let sequence_account = {
-            let owner = &WORMHOLE_PID;
-            let mut account = AccountSharedData::new(
-                sequence_balance,
-                sequence.len(),
-                &Pubkey::new_from_array(*owner),
-            );
+            let owner = &wormhole_pid;
+            let mut account = AccountSharedData::new(sequence_balance, sequence.len(), owner);
             account.set_data(sequence);
             account
         };
 
         // Serialize into (and create if necesary) the message account.
-        let message = message.try_to_vec().map_err(|_| AccumulatorUpdateError::FailedMessageSerialization)?;
+        let message = message
+            .try_to_vec()
+            .map_err(|_| AccumulatorUpdateError::FailedMessageSerialization)?;
         let message_balance = self.get_minimum_balance_for_rent_exemption(message.len());
         let message_account = {
-            let owner = &WORMHOLE_PID;
-            let mut account = AccountSharedData::new(
-                message_balance,
-                message.len(),
-                &Pubkey::new_from_array(*owner),
-            );
+            let owner = &wormhole_pid;
+            let mut account = AccountSharedData::new(message_balance, message.len(), owner);
             account.set_data(message);
             account
         };
 
-        // The accumulator_message_pda is derived at: 9VKyMGaKKJLUMBA5Fnf3dFiWMqGQkM979b5PP3rp62ck
+        // The message_pda derivation includes the ring buffer index to simulate a ring buffer in order
+        // for RPC users to select the message for an associated VAA.
         let (message_pda, _) = Pubkey::find_program_address(
-            &[b"AccumulatorMessage"],
-            &Pubkey::new_from_array(WORMHOLE_PID),
+            &[b"AccumulatorMessage", &ring_index.to_be_bytes()],
+            &wormhole_pid,
         );
 
-        self.store_account_and_update_capitalization(
-            &Pubkey::new_from_array(ACCUMULATOR_SEQUENCE_ADDR),
-            &sequence_account,
-        );
+        self.store_account_and_update_capitalization(&accumulator_sequence_addr, &sequence_account);
 
         self.store_account_and_update_capitalization(&message_pda, &message_account);
 
         Ok(())
+    }
+
+    fn env_pubkey_or(
+        var: &str,
+        default: Pubkey,
+    ) -> std::result::Result<Pubkey, AccumulatorUpdateError> {
+        Ok(std::env::var(var)
+            .as_deref()
+            .map(Pubkey::from_str)
+            .ok()
+            .transpose()?
+            .unwrap_or(default))
     }
 
     pub fn epoch_duration_in_years(&self, prev_epoch: Epoch) -> f64 {
@@ -18438,32 +18463,5 @@ pub(crate) mod tests {
         // NOTE: Use `<=` here (instead of `==`) since other accounts could
         // also be reclaimed by rent collection.
         assert!(bank.load_accounts_data_size_delta() <= -(data_size as i64));
-    }
-
-    #[test]
-    fn test_pyth_pda_addresses() {
-        use solana_sdk::pyth::wormhole::WORMHOLE_PID;
-        // TODO: make this a const
-        let (accumulator_message_pda, _) =
-            Pubkey::find_program_address(&[b"AccumulatorMessage"], &WORMHOLE_PID);
-
-        //TODO: make this a const
-        //seeds = ["emitter"], seeds::program = cpiProgramId
-        let (emitter_pda_key, _) =
-            Pubkey::find_program_address(&[b"emitter"], &sysvar::accumulator::id());
-        //TODO: make this a const
-        //seeds = ["Sequence", wormholeEmitter], seeds::program = wormholeProgram
-        let (sequence_pda_key, _) = Pubkey::find_program_address(
-            &[b"Sequence", &emitter_pda_key.to_bytes()],
-            &WORMHOLE_PID,
-        );
-
-        println!(
-            r"
-        accumulator_message_pda: {accumulator_message_pda:?}
-        emitter_pda_key: {emitter_pda_key:?}
-        sequence_pda_key: {sequence_pda_key:?}
-        "
-        );
     }
 }
