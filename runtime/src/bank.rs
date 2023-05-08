@@ -1280,6 +1280,26 @@ pub struct CommitTransactionCounts {
     pub signature_count: u64,
 }
 
+/// Accumulator specific error type. It would be nice to use `transaction::Error` but it does
+/// not include any `Custom` style variant we can leverage, so we introduce our own.
+#[derive(Debug, thiserror::Error)]
+enum AccumulatorUpdateError {
+    #[error("unknown accumulator error")]
+    Unknown,
+
+    #[error("get_program_accounts failed to return accounts")]
+    GetProgramAccounts,
+
+    #[error("failed to serialize sequence account")]
+    FailedSequenceSerialization,
+
+    #[error("failed to serialize message account")]
+    FailedMessageSerialization,
+
+    #[error("io error")]
+    Io(#[from] std::io::Error),
+}
+
 impl Bank {
     pub fn default_for_tests() -> Self {
         Self::default_with_accounts(Accounts::default_for_tests())
@@ -2480,12 +2500,19 @@ impl Bank {
     ///
     /// Note:
     /// - Library imports are placed within this function to keep the diff against upstream small.
-    /// - Functionality is kept in the `solana-pyth` library to contain our new dependencies.
     /// - This update will incur a performance hit on each slot, so must be kept efficient.
-    /// - Focused on Merkle temporarily and will be generalized to the Accumulator trait.
-    ///
-    /// TODO: Remove dangerous unwrap() calls.
+    /// - Focused on Merkle for initial release but will generalise to more accumulators in future.
     fn update_accumulator(&self) {
+        match self.update_accumulator_impl() {
+            Ok(_) => (),
+            Err(e) => {
+                error!("Error updating accumulator: {:?}", e);
+                return;
+            }
+        }
+    }
+
+    fn update_accumulator_impl(&self) -> std::result::Result<(), AccumulatorUpdateError> {
         use {
             byteorder::ReadBytesExt,
             solana_pyth::{
@@ -2506,9 +2533,8 @@ impl Bank {
         let accumulator_program =
             Pubkey::from_str("Vbmv1jt4vyuqBZcpYPpnVhrqVe5e6ZPb6JxDcffRHUM").unwrap();
 
-        let accounts = self
-            .get_program_accounts(&accumulator_program, &ScanConfig::new(true))
-            .unwrap();
+        let accounts = self.get_program_accounts(&accumulator_program, &ScanConfig::new(true))
+            .map_err(|_| AccumulatorUpdateError::GetProgramAccounts)?;
 
         // Filter accounts that don't match the Anchor sighash.
         let accounts = accounts.iter().filter(|(_, account)| {
@@ -2524,13 +2550,13 @@ impl Bank {
         // This code, using the offsets in each Account, extracts the various data versions from
         // the account. We deduplicate this result because the accumulator expects a set.
         let accounts = accounts
-            .flat_map(|(_, account)| {
+            .map(|(_, account)| {
                 let data = account.data();
                 let mut cursor = std::io::Cursor::new(&data);
-                let _sighash = cursor.read_u64::<LittleEndian>().unwrap();
-                let _bump = cursor.read_u8().unwrap();
-                let _version = cursor.read_u8().unwrap();
-                let header_len = cursor.read_u16::<LittleEndian>().unwrap();
+                let _sighash = cursor.read_u64::<LittleEndian>()?;
+                let _bump = cursor.read_u8()?;
+                let _version = cursor.read_u8()?;
+                let header_len = cursor.read_u16::<LittleEndian>()?;
                 let mut header_begin = header_len;
                 let mut inputs = Vec::new();
                 while let Some(end) = cursor.read_u16::<LittleEndian>().ok() {
@@ -2544,8 +2570,11 @@ impl Bank {
                     header_begin = end_offset;
                 }
 
-                inputs
+                Ok(inputs)
             })
+            .collect::<std::result::Result<Vec<_>, std::io::Error>>()?
+            .into_iter()
+            .flatten()
             .sorted_unstable()
             .dedup();
 
@@ -2558,8 +2587,7 @@ impl Bank {
         );
 
         let accumulator_data = {
-            let data = accounts.clone().collect::<Vec<_>>();
-            let data = data.try_to_vec().unwrap();
+            let data = accounts.clone().collect::<Vec<_>>().try_to_vec()?;
             let owner = solana_sdk::system_program::id();
             let balance = self.get_minimum_balance_for_rent_exemption(data.len());
             let mut account = AccountSharedData::new(balance, data.len(), &owner);
@@ -2577,6 +2605,8 @@ impl Bank {
         if let Some(accumulator) = MerkleAccumulator::from_set(accounts) {
             self.post_accumulator_attestation(accumulator);
         }
+
+        Ok(())
     }
 
     /// TODO: Remove dangerous unwrap() calls.
@@ -2584,7 +2614,7 @@ impl Bank {
     fn post_accumulator_attestation(
         &self,
         acc: solana_pyth::accumulators::merkle::MerkleAccumulator,
-    ) {
+    ) -> std::result::Result<(), AccumulatorUpdateError> {
         use {
             solana_pyth::{
                 wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
@@ -2625,9 +2655,12 @@ impl Bank {
             },
         };
 
+        info!("msg_data.message: {:?}", message.message);
+
         // Now we can bump and write the Sequence account.
         sequence.sequence += 1;
-        let sequence = sequence.try_to_vec().unwrap();
+        let sequence = sequence.try_to_vec().map_err(|_| AccumulatorUpdateError::FailedSequenceSerialization)?;
+
         let sequence_balance = self.get_minimum_balance_for_rent_exemption(sequence.len());
         let sequence_account = {
             let owner = &WORMHOLE_PID;
@@ -2640,15 +2673,8 @@ impl Bank {
             account
         };
 
-        self.store_account_and_update_capitalization(
-            &Pubkey::new_from_array(ACCUMULATOR_SEQUENCE_ADDR),
-            &sequence_account,
-        );
-
-        info!("msg_data.message: {:?}", message.message);
-
         // Serialize into (and create if necesary) the message account.
-        let message = message.try_to_vec().unwrap();
+        let message = message.try_to_vec().map_err(|_| AccumulatorUpdateError::FailedMessageSerialization)?;
         let message_balance = self.get_minimum_balance_for_rent_exemption(message.len());
         let message_account = {
             let owner = &WORMHOLE_PID;
@@ -2667,7 +2693,14 @@ impl Bank {
             &Pubkey::new_from_array(WORMHOLE_PID),
         );
 
+        self.store_account_and_update_capitalization(
+            &Pubkey::new_from_array(ACCUMULATOR_SEQUENCE_ADDR),
+            &sequence_account,
+        );
+
         self.store_account_and_update_capitalization(&message_pda, &message_account);
+
+        Ok(())
     }
 
     pub fn epoch_duration_in_years(&self, prev_epoch: Epoch) -> f64 {
