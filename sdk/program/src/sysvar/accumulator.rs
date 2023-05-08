@@ -48,7 +48,7 @@
 use crate::sysvar::Sysvar;
 pub use {
     crate::{account_info::AccountInfo, program_error::ProgramError, slot_history::SlotHistory},
-    solana_pyth::accumulators::merkle::MerkleAccumulator,
+    pythnet_sdk::accumulators::merkle::MerkleAccumulator,
 };
 
 crate::declare_sysvar_id!(
