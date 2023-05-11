@@ -2514,6 +2514,7 @@ impl Bank {
             byteorder::ReadBytesExt,
             pythnet_sdk::{
                 accumulators::{merkle::MerkleAccumulator, Accumulator},
+                hashers::keccak256_160::Keccak160,
                 pythnet::PYTH_PID,
                 MESSAGE_BUFFER_PID,
             },
@@ -2603,7 +2604,7 @@ impl Bank {
         // Generate a Message owned by Wormhole to be sent cross-chain. This short-circuits the
         // Wormhole message generation code that would normally be called, but the Guardian
         // set filters our messages so this does not pose a security risk.
-        if let Some(accumulator) = MerkleAccumulator::from_set(accounts) {
+        if let Some(accumulator) = MerkleAccumulator::<Keccak160>::from_set(accounts) {
             self.post_accumulator_attestation(accumulator, ring_index)?;
         }
 
@@ -2617,7 +2618,9 @@ impl Bank {
     /// TODO: Safe integer conversion checks if any are missed.
     fn post_accumulator_attestation(
         &self,
-        acc: pythnet_sdk::accumulators::merkle::MerkleAccumulator,
+        acc: pythnet_sdk::accumulators::merkle::MerkleAccumulator<
+            pythnet_sdk::hashers::keccak256_160::Keccak160,
+        >,
         ring_index: u32,
     ) -> std::result::Result<(), AccumulatorUpdateError> {
         use {
