@@ -71,7 +71,6 @@ use {
     dashmap::DashMap,
     itertools::Itertools,
     log::*,
-    pythnet_sdk::pythnet,
     rand::Rng,
     rayon::{
         iter::{IntoParallelIterator, IntoParallelRefIterator, ParallelIterator},
@@ -2515,8 +2514,7 @@ impl Bank {
             pythnet_sdk::{
                 accumulators::{merkle::MerkleAccumulator, Accumulator},
                 hashers::keccak256_160::Keccak160,
-                pythnet::PYTH_PID,
-                MESSAGE_BUFFER_PID,
+                pythnet, MESSAGE_BUFFER_PID,
             },
             solana_sdk::borsh::BorshSerialize,
         };
@@ -2527,7 +2525,7 @@ impl Bank {
         // Find all accounts owned by the Message Buffer program using get_program_accounts, and
         // extract the account data.
 
-        let message_buffer_pid = Self::env_pubkey_or(
+        let message_buffer_pid = self.env_pubkey_or(
             "MESSAGE_BUFFER_PID",
             Pubkey::new_from_array(MESSAGE_BUFFER_PID),
         )?;
@@ -2536,14 +2534,15 @@ impl Bank {
             .get_program_accounts(&message_buffer_pid, &ScanConfig::new(true))
             .map_err(|_| AccumulatorUpdateError::GetProgramAccounts)?;
 
+        let preimage = b"account:MessageBuffer";
+        let mut expected_sighash = [0u8; 8];
+        expected_sighash.copy_from_slice(&hashv(&[preimage]).to_bytes()[..8]);
+
         // Filter accounts that don't match the Anchor sighash.
         let accounts = accounts.iter().filter(|(_, account)| {
             // Remove accounts that do not start with the expected Anchor sighash.
-            let preimage = b"account:MessageBuffer";
             let mut sighash = [0u8; 8];
-            let mut expected_sighash = [0u8; 8];
             sighash.copy_from_slice(&account.data()[..8]);
-            expected_sighash.copy_from_slice(&hashv(&[preimage]).to_bytes()[..8]);
             sighash == expected_sighash
         });
 
@@ -2559,8 +2558,9 @@ impl Bank {
                 let header_len = cursor.read_u16::<LittleEndian>()?;
                 let mut header_begin = header_len;
                 let mut inputs = Vec::new();
+                let mut cur_end_offsets_idx: usize = 0;
                 while let Some(end) = cursor.read_u16::<LittleEndian>().ok() {
-                    if end == 0 {
+                    if end == 0 || cur_end_offsets_idx == (u8::MAX as usize) {
                         break;
                     }
 
@@ -2568,6 +2568,7 @@ impl Bank {
                     let accumulator_input_data = &data[header_begin as usize..end_offset as usize];
                     inputs.push(accumulator_input_data);
                     header_begin = end_offset;
+                    cur_end_offsets_idx += 1;
                 }
 
                 Ok(inputs)
@@ -2578,7 +2579,7 @@ impl Bank {
             .sorted_unstable()
             .dedup();
 
-        let pyth_pid = Self::env_pubkey_or("PYTH_PID", Pubkey::new_from_array(pythnet::PYTH_PID))?;
+        let pyth_pid = self.env_pubkey_or("PYTH_PID", Pubkey::new_from_array(pythnet::PYTH_PID))?;
 
         // We now generate a Proof PDA (Owned by the System Program) to store the resulting Proof
         // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
@@ -2593,7 +2594,11 @@ impl Bank {
         );
 
         let accumulator_data = {
-            let data = accounts.clone().collect::<Vec<_>>().try_to_vec()?;
+            let mut data = vec![];
+            let acc_state_magic = &mut b"PAS1".to_vec();
+            let accounts_data = &mut accounts.clone().collect::<Vec<_>>().try_to_vec()?;
+            data.append(acc_state_magic);
+            data.append(accounts_data);
             let owner = solana_sdk::system_program::id();
             let balance = self.get_minimum_balance_for_rent_exemption(data.len());
             let mut account = AccountSharedData::new(balance, data.len(), &owner);
@@ -2625,16 +2630,16 @@ impl Bank {
     ) -> std::result::Result<(), AccumulatorUpdateError> {
         use {
             pythnet_sdk::{
-                pythnet::{ACCUMULATOR_SEQUENCE_ADDR, WORMHOLE_PID},
+                pythnet,
                 wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
                 ACCUMULATOR_EMITTER_ADDRESS,
             },
             solana_sdk::borsh::BorshSerialize,
         };
 
-        let accumulator_sequence_addr = Self::env_pubkey_or(
+        let accumulator_sequence_addr = self.env_pubkey_or(
             "ACCUMULATOR_SEQUENCE_ADDR",
-            Pubkey::new_from_array(ACCUMULATOR_SEQUENCE_ADDR),
+            Pubkey::new_from_array(pythnet::ACCUMULATOR_SEQUENCE_ADDR),
         )?;
 
         // Wormhole uses a Sequence account that is incremented each time a message is posted. As
@@ -2668,8 +2673,10 @@ impl Bank {
         };
 
         info!("msg_data.message: {:?}", message.message);
-        let wormhole_pid =
-            Self::env_pubkey_or("WORMHOLE_PID", Pubkey::new_from_array(WORMHOLE_PID))?;
+        let wormhole_pid = self.env_pubkey_or(
+            "WORMHOLE_PID",
+            Pubkey::new_from_array(pythnet::WORMHOLE_PID),
+        )?;
 
         // Now we can bump and write the Sequence account.
         sequence.sequence += 1;
@@ -2710,7 +2717,10 @@ impl Bank {
         Ok(())
     }
 
+    /// Read the pubkey from the environment variable `var` or return `default`
+    /// if the variable is not set.
     fn env_pubkey_or(
+        &self,
         var: &str,
         default: Pubkey,
     ) -> std::result::Result<Pubkey, AccumulatorUpdateError> {
