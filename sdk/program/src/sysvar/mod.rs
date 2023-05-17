@@ -35,6 +35,7 @@ lazy_static! {
         slot_history::id(),
         stake_history::id(),
         instructions::id(),
+        accumulator::id(),
     ];
 }
 
