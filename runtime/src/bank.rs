@@ -1519,12 +1519,7 @@ impl Bank {
             }
             bank.update_stake_history(None);
         }
-        if bank
-            .feature_set
-            .is_active(&feature_set::enable_accumulator_sysvar::id())
-        {
-            bank.update_accumulator();
-        }
+        bank.update_accumulator();
         bank.update_clock(None);
 
         bank.update_rent();
@@ -1883,10 +1878,7 @@ impl Bank {
             |_| {
                 new.update_slot_hashes();
                 new.update_stake_history(Some(parent_epoch));
-                if feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
-                    info!("Updating accumulator. Parent_epoch: {}", parent_epoch);
-                    new.update_accumulator();
-                }
+                new.update_accumulator();
                 new.update_clock(Some(parent_epoch));
                 new.update_fees();
             },
@@ -2486,7 +2478,7 @@ impl Bank {
 
     /// Loads the Accumulator Sysvar from disk, creating an empty account for it if it does not
     /// exist already. See `clock` to see a similar sysvar this is based on.
-    pub fn accumulator(&self) -> sysvar::accumulator::MerkleAccumulator {
+    pub fn accumulator(&self) -> sysvar::accumulator::MerkleAccumulator<pythnet_sdk::hashers::keccak256_160::Keccak160> {
         from_account(
             &self
                 .get_account(&sysvar::accumulator::id())
@@ -2503,6 +2495,10 @@ impl Bank {
     /// - This update will incur a performance hit on each slot, so must be kept efficient.
     /// - Focused on Merkle for initial release but will generalise to more accumulators in future.
     fn update_accumulator(&self) {
+        if !self.feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
+            return;
+        }
+
         if let Err(e) = self.update_accumulator_impl() {
             error!("Error updating accumulator: {:?}", e);
         }
@@ -2524,7 +2520,6 @@ impl Bank {
 
         // Find all accounts owned by the Message Buffer program using get_program_accounts, and
         // extract the account data.
-
         let message_buffer_pid = self.env_pubkey_or(
             "MESSAGE_BUFFER_PID",
             Pubkey::new_from_array(MESSAGE_BUFFER_PID),
@@ -2579,15 +2574,12 @@ impl Bank {
             .sorted_unstable()
             .dedup();
 
-        let pyth_pid = self.env_pubkey_or("PYTH_PID", Pubkey::new_from_array(pythnet::PYTH_PID))?;
-
         // We now generate a Proof PDA (Owned by the System Program) to store the resulting Proof
         // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
         // for RPC users to select the correct proof for an associated VAA.
         let (accumulator_account, _) = Pubkey::find_program_address(
             &[
                 b"AccumulatorState",
-                &pyth_pid.as_ref(),
                 &ring_index.to_be_bytes(),
             ],
             &solana_sdk::system_program::id(),
@@ -2711,7 +2703,6 @@ impl Bank {
         );
 
         self.store_account_and_update_capitalization(&accumulator_sequence_addr, &sequence_account);
-
         self.store_account_and_update_capitalization(&message_pda, &message_account);
 
         Ok(())
@@ -14993,6 +14984,179 @@ pub(crate) mod tests {
             bank.clock().unix_timestamp,
             bank.unix_timestamp_from_genesis()
         );
+    }
+
+    #[test]
+    fn test_update_accumulator_sysvar() {
+        let leader_pubkey = solana_sdk::pubkey::new_rand();
+        let GenesisConfigInfo {
+            mut genesis_config,
+            ..
+        } = create_genesis_config_with_leader(5, &leader_pubkey, 3);
+
+        // The genesis create function uses `Develompent` mode which enables all feature flags, so
+        // we need to remove the accumulator sysvar in order to test the validator behaves
+        // correctly when the feature is disabled. We will re-enable it further into this test.
+        genesis_config
+            .accounts
+            .remove(&feature_set::enable_accumulator_sysvar::id())
+            .unwrap();
+
+        // Set epoch length to 32 so we can advance epochs quickly. We also skip past slot 0 here
+        // due to slot 0 having special handling.
+        let slots_in_epoch = 32;
+        genesis_config.epoch_schedule = EpochSchedule::new(slots_in_epoch);
+        let mut bank = Bank::new_for_tests(&genesis_config);
+        bank = new_from_parent(&Arc::new(bank));
+        bank = new_from_parent(&Arc::new(bank));
+
+        // Create Message Account Bytes
+        //
+        // NOTE: This was serialized by hand, but should be replaced with the pythnet-sdk
+        // serializer once implemented. This contains a MessageBuffer with two 127 byte long
+        // messages: [1u8; 127] and [2u8; 127].
+        let preimage = b"account:MessageBuffer";
+        let mut sighash = [0u8; 8];
+        sighash.copy_from_slice(&hashv(&[preimage]).to_bytes()[..8]);
+
+        let mut message_buffer_bytes = vec![];
+        message_buffer_bytes.extend_from_slice(&sighash);
+
+        #[rustfmt::skip]
+        message_buffer_bytes.extend_from_slice(&[
+            // Bump
+            0,
+            // Version
+            1,
+            // Header Length
+            10, 2,
+            // Offsets
+            127, 0,
+            254, 0,
+            // Remaining Unused Offsets
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // Message 1
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
+            // Message 2
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
+        ]);
+
+        // Create a Message account.
+        let price_message_key = keypair_from_seed(&[1u8; 32]).unwrap();
+        let mut price_message_account = bank
+            .get_account(&price_message_key.pubkey())
+            .unwrap_or_default();
+        price_message_account.set_lamports(1_000_000_000);
+        price_message_account.set_owner(Pubkey::new_from_array(pythnet_sdk::MESSAGE_BUFFER_PID));
+        price_message_account.set_data(message_buffer_bytes);
+
+        // Store Message account so the accumulator sysvar updater can find it.
+        bank.store_account(
+            &price_message_key.pubkey(),
+            &price_message_account,
+        );
+
+        // Derive the Wormhole Message Account that will be generated by the sysvar updater.
+        let (wormhole_message_pubkey, _bump) = Pubkey::find_program_address(
+            &[b"AccumulatorMessage", &(bank.clock().slot as u32).to_be_bytes()],
+            &Pubkey::new_from_array(pythnet_sdk::pythnet::WORMHOLE_PID),
+        );
+
+        // Account Data should be empty at this point. Check account data is [].
+        let wormhole_message_account = bank
+            .get_account(&wormhole_message_pubkey)
+            .unwrap_or_default();
+        assert_eq!(wormhole_message_account.data().len(), 0);
+
+        // Run accumulator, the feature is disabled so account data should still be empty. Check
+        // account data is still [].
+        bank.update_accumulator();
+        let wormhole_message_account = bank
+            .get_account(&wormhole_message_pubkey)
+            .unwrap_or_default();
+        assert_eq!(wormhole_message_account.data().len(), 0);
+        assert_eq!(bank
+            .feature_set
+            .is_active(&feature_set::enable_accumulator_sysvar::id()), false);
+
+        // Enable Accumulator Feature (42 = random lamport balance, and the meaning of the universe).
+        let feature_id = feature_set::enable_accumulator_sysvar::id();
+        let feature = Feature { activated_at: Some(30) };
+        bank.store_account(&feature_id, &feature::create_account(&feature, 42));
+        bank.compute_active_feature_set(true);
+        for _ in 0..slots_in_epoch {
+            bank = new_from_parent(&Arc::new(bank));
+        }
+
+        // Feature should now be enabled on the new bank as the epoch has changed.
+        assert_eq!(bank
+            .feature_set
+            .is_active(&feature_set::enable_accumulator_sysvar::id()), true);
+
+        // Run accumulator again, the feature is now enabled so account data should contain a
+        // wormhole message.
+        let (wormhole_message_pubkey, _bump) = Pubkey::find_program_address(
+            &[b"AccumulatorMessage", &(bank.clock().slot as u32).to_be_bytes()],
+            &Pubkey::new_from_array(pythnet_sdk::pythnet::WORMHOLE_PID),
+        );
+
+        bank.update_accumulator();
+
+        let wormhole_message_account = bank
+            .get_account(&wormhole_message_pubkey)
+            .unwrap_or_default();
+
+        assert_ne!(wormhole_message_account.data().len(), 0);
+
+        // TODO: There is something non-deterministic here so this fails, 2 bytes are changing.
+        // Needs to be investigated.
+        assert_eq!(wormhole_message_account.data(), vec![
+            109, 115, 117, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 172, 176, 100, 100, 0, 0, 0, 0, 3, 0, 0, 0,
+            0, 0, 0, 0, 26, 0, 225, 1, 250, 237, 172, 88, 81, 227, 43, 155, 35, 181, 249, 65, 26,
+            140, 43, 172, 74, 174, 62, 212, 221, 123, 129, 29, 209, 167, 46, 164, 170, 113, 29, 0,
+            0, 0, 65, 85, 87, 86, 0, 0, 0, 0, 34, 81, 247, 26, 153, 42, 255, 65, 58, 116, 230, 225,
+            135, 123, 152, 229, 157, 49, 120, 78, 52
+        ]);
+
+        // TODO: Should be done here.
+        //
+        // 1. Deserialize the above structure that contains merkle data.
+        // 2. Verify the hashes verify in the merkle tree.
+        // 3. Verify the AccumulatorState account.
+        // 4. Verify the wormhole sequence is incrementing.
+        // 5. Verify the ring buffer actually cycles (advance slot 10_000 times)
+        //
+        // TODO: Should be done as additional tests.
+        //
+        // 1. Verify the accumulator state stays intact after the bank is advanced.
+        // 2. Intentionally add corrupted accounts that do not appear in the accumulator.
+        // 3. Check if message offset is > message size to prevent validator crash.
     }
 
     fn poh_estimate_offset(bank: &Bank) -> Duration {
