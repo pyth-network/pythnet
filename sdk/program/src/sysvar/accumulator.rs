@@ -49,14 +49,15 @@ use crate::sysvar::Sysvar;
 pub use {
     crate::{account_info::AccountInfo, program_error::ProgramError, slot_history::SlotHistory},
     pythnet_sdk::accumulators::merkle::MerkleAccumulator,
+    pythnet_sdk::hashers::keccak256_160::Keccak160,
 };
 
 crate::declare_sysvar_id!(
     "SysvarAccumu1ator11111111111111111111111111",
-    MerkleAccumulator
+    MerkleAccumulator<Keccak160>
 );
 
-impl Sysvar for MerkleAccumulator {
+impl Sysvar for MerkleAccumulator<Keccak160> {
     fn size_of() -> usize {
         0
     }
