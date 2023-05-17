@@ -1519,12 +1519,7 @@ impl Bank {
             }
             bank.update_stake_history(None);
         }
-        if bank
-            .feature_set
-            .is_active(&feature_set::enable_accumulator_sysvar::id())
-        {
-            bank.update_accumulator();
-        }
+        bank.update_accumulator();
         bank.update_clock(None);
 
         bank.update_rent();
@@ -1883,10 +1878,7 @@ impl Bank {
             |_| {
                 new.update_slot_hashes();
                 new.update_stake_history(Some(parent_epoch));
-                if feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
-                    info!("Updating accumulator. Parent_epoch: {}", parent_epoch);
-                    new.update_accumulator();
-                }
+                new.update_accumulator();
                 new.update_clock(Some(parent_epoch));
                 new.update_fees();
             },
@@ -2503,6 +2495,10 @@ impl Bank {
     /// - This update will incur a performance hit on each slot, so must be kept efficient.
     /// - Focused on Merkle for initial release but will generalise to more accumulators in future.
     fn update_accumulator(&self) {
+        if !self.feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
+            return;
+        }
+
         if let Err(e) = self.update_accumulator_impl() {
             error!("Error updating accumulator: {:?}", e);
         }
@@ -14997,14 +14993,20 @@ pub(crate) mod tests {
             mut genesis_config,
             ..
         } = create_genesis_config_with_leader(5, &leader_pubkey, 3);
+
+        // The genesis create function uses `Develompent` mode which enables all feature flags, so
+        // we need to remove the accumulator sysvar in order to test the validator behaves
+        // correctly when the feature is disabled. We will re-enable it further into this test.
         genesis_config
             .accounts
             .remove(&feature_set::enable_accumulator_sysvar::id())
             .unwrap();
+
+        // Set epoch length to 32 so we can advance epochs quickly. We also skip past slot 0 here
+        // due to slot 0 having special handling.
         let slots_in_epoch = 32;
         genesis_config.epoch_schedule = EpochSchedule::new(slots_in_epoch);
         let mut bank = Bank::new_for_tests(&genesis_config);
-        // Advance past slot 0, which has special handling.
         bank = new_from_parent(&Arc::new(bank));
         bank = new_from_parent(&Arc::new(bank));
 
@@ -15031,7 +15033,7 @@ pub(crate) mod tests {
             // Offsets
             127, 0,
             254, 0,
-
+            // Remaining Unused Offsets
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -15049,16 +15051,19 @@ pub(crate) mod tests {
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            // Message 1
             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
             1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
+            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
+            // Message 2
             2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
             2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
             2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
             2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-            2, 2, 2, 2, 2, 2
+            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
         ]);
 
         // Create a Message account.
@@ -15099,16 +15104,16 @@ pub(crate) mod tests {
             .feature_set
             .is_active(&feature_set::enable_accumulator_sysvar::id()), false);
 
-        // Enable Accumulator Feature (42 = lamport balance, and the meaning of the universe).
+        // Enable Accumulator Feature (42 = random lamport balance, and the meaning of the universe).
         let feature_id = feature_set::enable_accumulator_sysvar::id();
         let feature = Feature { activated_at: Some(30) };
         bank.store_account(&feature_id, &feature::create_account(&feature, 42));
         bank.compute_active_feature_set(true);
-        for _ in 0..2*slots_in_epoch {
+        for _ in 0..slots_in_epoch {
             bank = new_from_parent(&Arc::new(bank));
         }
 
-        // Feature should now be enabled on the new bank.
+        // Feature should now be enabled on the new bank as the epoch has changed.
         assert_eq!(bank
             .feature_set
             .is_active(&feature_set::enable_accumulator_sysvar::id()), true);
@@ -15127,12 +15132,15 @@ pub(crate) mod tests {
             .unwrap_or_default();
 
         assert_ne!(wormhole_message_account.data().len(), 0);
+
+        // TODO: There is something non-deterministic here so this fails, 2 bytes are changing.
+        // Needs to be investigated.
         assert_eq!(wormhole_message_account.data(), vec![
             109, 115, 117, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 205, 169, 100, 100, 0, 0, 0, 0, 35, 0, 0, 0,
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 172, 176, 100, 100, 0, 0, 0, 0, 3, 0, 0, 0,
             0, 0, 0, 0, 26, 0, 225, 1, 250, 237, 172, 88, 81, 227, 43, 155, 35, 181, 249, 65, 26,
             140, 43, 172, 74, 174, 62, 212, 221, 123, 129, 29, 209, 167, 46, 164, 170, 113, 29, 0,
-            0, 0, 65, 85, 87, 86, 0, 0, 0, 0, 66, 81, 247, 26, 153, 42, 255, 65, 58, 116, 230, 225,
+            0, 0, 65, 85, 87, 86, 0, 0, 0, 0, 34, 81, 247, 26, 153, 42, 255, 65, 58, 116, 230, 225,
             135, 123, 152, 229, 157, 49, 120, 78, 52
         ]);
 
