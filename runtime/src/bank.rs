@@ -2478,7 +2478,10 @@ impl Bank {
 
     /// Loads the Accumulator Sysvar from disk, creating an empty account for it if it does not
     /// exist already. See `clock` to see a similar sysvar this is based on.
-    pub fn accumulator(&self) -> sysvar::accumulator::MerkleAccumulator<pythnet_sdk::hashers::keccak256_160::Keccak160> {
+    pub fn accumulator(
+        &self,
+    ) -> sysvar::accumulator::MerkleAccumulator<pythnet_sdk::hashers::keccak256_160::Keccak160>
+    {
         from_account(
             &self
                 .get_account(&sysvar::accumulator::id())
@@ -2495,7 +2498,10 @@ impl Bank {
     /// - This update will incur a performance hit on each slot, so must be kept efficient.
     /// - Focused on Merkle for initial release but will generalise to more accumulators in future.
     fn update_accumulator(&self) {
-        if !self.feature_set.is_active(&feature_set::enable_accumulator_sysvar::id()) {
+        if !self
+            .feature_set
+            .is_active(&feature_set::enable_accumulator_sysvar::id())
+        {
             return;
         }
 
@@ -2510,7 +2516,7 @@ impl Bank {
             pythnet_sdk::{
                 accumulators::{merkle::MerkleAccumulator, Accumulator},
                 hashers::keccak256_160::Keccak160,
-                pythnet, MESSAGE_BUFFER_PID,
+                MESSAGE_BUFFER_PID,
             },
             solana_sdk::borsh::BorshSerialize,
         };
@@ -2578,10 +2584,7 @@ impl Bank {
         // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
         // for RPC users to select the correct proof for an associated VAA.
         let (accumulator_account, _) = Pubkey::find_program_address(
-            &[
-                b"AccumulatorState",
-                &ring_index.to_be_bytes(),
-            ],
+            &[b"AccumulatorState", &ring_index.to_be_bytes()],
             &solana_sdk::system_program::id(),
         );
 
@@ -7274,7 +7277,14 @@ pub(crate) mod tests {
             },
             status_cache::MAX_CACHE_ENTRIES,
         },
+        byteorder::{LittleEndian, ReadBytesExt},
         crossbeam_channel::{bounded, unbounded},
+        pythnet_sdk::{
+            accumulators::{merkle::MerkleAccumulator, Accumulator},
+            hashers::{keccak256_160::Keccak160, Hasher},
+            wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
+            ACCUMULATOR_EMITTER_ADDRESS,
+        },
         solana_program_runtime::{
             accounts_data_meter::MAX_ACCOUNTS_DATA_LEN,
             compute_budget::MAX_COMPUTE_UNIT_LIMIT,
@@ -7283,6 +7293,7 @@ pub(crate) mod tests {
         },
         solana_sdk::{
             account::Account,
+            borsh::{BorshDeserialize, BorshSerialize},
             bpf_loader, bpf_loader_deprecated, bpf_loader_upgradeable,
             clock::{DEFAULT_SLOTS_PER_EPOCH, DEFAULT_TICKS_PER_SLOT},
             compute_budget::ComputeBudgetInstruction,
@@ -7316,7 +7327,7 @@ pub(crate) mod tests {
                 MAX_LOCKOUT_HISTORY,
             },
         },
-        std::{result, sync::atomic::Ordering::Release, thread::Builder, time::Duration},
+        std::{io::Read, result, sync::atomic::Ordering::Release, thread::Builder, time::Duration},
     };
 
     fn new_sanitized_message(
@@ -14986,12 +14997,62 @@ pub(crate) mod tests {
         );
     }
 
+    // Create Message Account Bytes
+    //
+    // NOTE: This was serialized by hand, but should be replaced with the pythnet-sdk
+    // serializer once implemented.
+    fn create_message_buffer_bytes(msgs: Vec<Vec<u8>>) -> Vec<u8> {
+        let mut buffer = Vec::new();
+        let preimage = b"account:MessageBuffer";
+        buffer.extend_from_slice(&hashv(&[preimage]).to_bytes()[..8]);
+        buffer.extend_from_slice(&[0, 1, 10, 2]);
+        let mut sums: Vec<u16> = msgs.iter().map(|m| m.len() as u16).collect();
+        sums.resize(255, 0u16);
+        buffer.extend(
+            sums.into_iter()
+                .scan(0, |acc, v| {
+                    *acc += v;
+                    Some(if v == 0 { v } else { *acc }.to_le_bytes())
+                })
+                .flatten(),
+        );
+        buffer.extend(msgs.into_iter().flatten());
+        buffer
+    }
+
+    fn get_acc_sequence_tracker(bank: &Bank) -> AccumulatorSequenceTracker {
+        let account = bank
+            .get_account(&Pubkey::new_from_array(
+                pythnet_sdk::pythnet::ACCUMULATOR_SEQUENCE_ADDR,
+            ))
+            .unwrap();
+        AccumulatorSequenceTracker::try_from_slice(&mut account.data()).unwrap()
+    }
+
+    fn get_wormhole_message_account(bank: &Bank, ring_index: u32) -> AccountSharedData {
+        let (wormhole_message_pubkey, _bump) = Pubkey::find_program_address(
+            &[b"AccumulatorMessage", &ring_index.to_be_bytes()],
+            &Pubkey::new_from_array(pythnet_sdk::pythnet::WORMHOLE_PID),
+        );
+        bank.get_account(&wormhole_message_pubkey)
+            .unwrap_or_default()
+    }
+
+    fn get_accumulator_state(bank: &Bank, ring_index: u32) -> Vec<u8> {
+        let (accumulator_state_pubkey, _) = Pubkey::find_program_address(
+            &[b"AccumulatorState", &ring_index.to_be_bytes()],
+            &solana_sdk::system_program::id(),
+        );
+
+        let account = bank.get_account(&accumulator_state_pubkey).unwrap();
+        account.data().to_vec()
+    }
+
     #[test]
     fn test_update_accumulator_sysvar() {
         let leader_pubkey = solana_sdk::pubkey::new_rand();
         let GenesisConfigInfo {
-            mut genesis_config,
-            ..
+            mut genesis_config, ..
         } = create_genesis_config_with_leader(5, &leader_pubkey, 3);
 
         // The genesis create function uses `Develompent` mode which enables all feature flags, so
@@ -15010,61 +15071,13 @@ pub(crate) mod tests {
         bank = new_from_parent(&Arc::new(bank));
         bank = new_from_parent(&Arc::new(bank));
 
-        // Create Message Account Bytes
-        //
-        // NOTE: This was serialized by hand, but should be replaced with the pythnet-sdk
-        // serializer once implemented. This contains a MessageBuffer with two 127 byte long
-        // messages: [1u8; 127] and [2u8; 127].
-        let preimage = b"account:MessageBuffer";
-        let mut sighash = [0u8; 8];
-        sighash.copy_from_slice(&hashv(&[preimage]).to_bytes()[..8]);
+        let message_0 = vec![1u8; 127];
+        let message_1 = vec![2u8; 127];
+        // insert into message buffer in reverse order to test that accumulator
+        // sorts first
+        let messages = vec![message_1, message_0];
 
-        let mut message_buffer_bytes = vec![];
-        message_buffer_bytes.extend_from_slice(&sighash);
-
-        #[rustfmt::skip]
-        message_buffer_bytes.extend_from_slice(&[
-            // Bump
-            0,
-            // Version
-            1,
-            // Header Length
-            10, 2,
-            // Offsets
-            127, 0,
-            254, 0,
-            // Remaining Unused Offsets
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            // Message 1
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
-            1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
-            // Message 2
-            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2,
-            2, 2, 2, 2, 2, 2, 2, 2, 2, 2, 2
-        ]);
+        let message_buffer_bytes = create_message_buffer_bytes(messages.clone());
 
         // Create a Message account.
         let price_message_key = keypair_from_seed(&[1u8; 32]).unwrap();
@@ -15076,14 +15089,14 @@ pub(crate) mod tests {
         price_message_account.set_data(message_buffer_bytes);
 
         // Store Message account so the accumulator sysvar updater can find it.
-        bank.store_account(
-            &price_message_key.pubkey(),
-            &price_message_account,
-        );
+        bank.store_account(&price_message_key.pubkey(), &price_message_account);
 
         // Derive the Wormhole Message Account that will be generated by the sysvar updater.
         let (wormhole_message_pubkey, _bump) = Pubkey::find_program_address(
-            &[b"AccumulatorMessage", &(bank.clock().slot as u32).to_be_bytes()],
+            &[
+                b"AccumulatorMessage",
+                &(bank.clock().slot as u32).to_be_bytes(),
+            ],
             &Pubkey::new_from_array(pythnet_sdk::pythnet::WORMHOLE_PID),
         );
 
@@ -15093,20 +15106,26 @@ pub(crate) mod tests {
             .unwrap_or_default();
         assert_eq!(wormhole_message_account.data().len(), 0);
 
-        // Run accumulator, the feature is disabled so account data should still be empty. Check
-        // account data is still [].
-        bank.update_accumulator();
+        // Run accumulator by creating a new bank from parent,the feature is
+        // disabled so account data should still be empty. Check account data is
+        // still [].
+        bank = new_from_parent(&Arc::new(bank));
+
         let wormhole_message_account = bank
             .get_account(&wormhole_message_pubkey)
             .unwrap_or_default();
+        assert_eq!(
+            bank.feature_set
+                .is_active(&feature_set::enable_accumulator_sysvar::id()),
+            false
+        );
         assert_eq!(wormhole_message_account.data().len(), 0);
-        assert_eq!(bank
-            .feature_set
-            .is_active(&feature_set::enable_accumulator_sysvar::id()), false);
 
         // Enable Accumulator Feature (42 = random lamport balance, and the meaning of the universe).
         let feature_id = feature_set::enable_accumulator_sysvar::id();
-        let feature = Feature { activated_at: Some(30) };
+        let feature = Feature {
+            activated_at: Some(30),
+        };
         bank.store_account(&feature_id, &feature::create_account(&feature, 42));
         bank.compute_active_feature_set(true);
         for _ in 0..slots_in_epoch {
@@ -15114,47 +15133,185 @@ pub(crate) mod tests {
         }
 
         // Feature should now be enabled on the new bank as the epoch has changed.
-        assert_eq!(bank
-            .feature_set
-            .is_active(&feature_set::enable_accumulator_sysvar::id()), true);
+        assert_eq!(
+            bank.feature_set
+                .is_active(&feature_set::enable_accumulator_sysvar::id()),
+            true
+        );
+
+        // get the timestamp & slot for the message
+        let message_time = bank.clock().unix_timestamp;
+        let message_slot = bank.clock().slot;
+        let ring_index = (message_slot % 10_000) as u32;
+
+        let mut sequence_tracker = get_acc_sequence_tracker(&bank);
+        let message_sequence = sequence_tracker.sequence;
 
         // Run accumulator again, the feature is now enabled so account data should contain a
         // wormhole message.
-        let (wormhole_message_pubkey, _bump) = Pubkey::find_program_address(
-            &[b"AccumulatorMessage", &(bank.clock().slot as u32).to_be_bytes()],
-            &Pubkey::new_from_array(pythnet_sdk::pythnet::WORMHOLE_PID),
-        );
+        bank = new_from_parent(&Arc::new(bank));
 
-        bank.update_accumulator();
-
-        let wormhole_message_account = bank
-            .get_account(&wormhole_message_pubkey)
-            .unwrap_or_default();
+        let wormhole_message_account = get_wormhole_message_account(&bank, ring_index);
 
         assert_ne!(wormhole_message_account.data().len(), 0);
 
-        // TODO: There is something non-deterministic here so this fails, 2 bytes are changing.
-        // Needs to be investigated.
-        assert_eq!(wormhole_message_account.data(), vec![
-            109, 115, 117, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 172, 176, 100, 100, 0, 0, 0, 0, 3, 0, 0, 0,
-            0, 0, 0, 0, 26, 0, 225, 1, 250, 237, 172, 88, 81, 227, 43, 155, 35, 181, 249, 65, 26,
-            140, 43, 172, 74, 174, 62, 212, 221, 123, 129, 29, 209, 167, 46, 164, 170, 113, 29, 0,
-            0, 0, 65, 85, 87, 86, 0, 0, 0, 0, 34, 81, 247, 26, 153, 42, 255, 65, 58, 116, 230, 225,
-            135, 123, 152, 229, 157, 49, 120, 78, 52
-        ]);
+        let wormhole_message =
+            PostedMessageUnreliableData::deserialize(&mut wormhole_message_account.data()).unwrap();
 
-        // TODO: Should be done here.
-        //
-        // 1. Deserialize the above structure that contains merkle data.
-        // 2. Verify the hashes verify in the merkle tree.
-        // 3. Verify the AccumulatorState account.
-        // 4. Verify the wormhole sequence is incrementing.
-        // 5. Verify the ring buffer actually cycles (advance slot 10_000 times)
-        //
+        let messages = messages.iter().map(|m| m.as_slice()).collect::<Vec<_>>();
+        let accumulator_elements = messages.clone().into_iter().sorted_unstable().dedup();
+        let expected_accumulator =
+            MerkleAccumulator::<Keccak160>::from_set(accumulator_elements).unwrap();
+        let expected_wormhole_message_payload = expected_accumulator.serialize(ring_index);
+        assert_eq!(
+            wormhole_message.message.payload,
+            expected_wormhole_message_payload
+        );
+
+        let expected_wormhole_message = PostedMessageUnreliableData {
+            message: MessageData {
+                vaa_version: 1,
+                consistency_level: 1,
+                vaa_time: 1u32,
+                vaa_signature_account: Pubkey::default().to_bytes(),
+                submission_time: message_time as u32,
+                nonce: 0,
+                sequence: message_sequence,
+                emitter_chain: 26,
+                emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
+                payload: expected_accumulator.serialize(ring_index),
+            },
+        };
+
+        let expected_wormhole_message_data = expected_wormhole_message.try_to_vec().unwrap();
+
+        assert_eq!(
+            wormhole_message_account.data().to_vec(),
+            expected_wormhole_message_data
+        );
+
+        // verify hashes verify in accumulator
+        for msg in messages {
+            let msg_hash = Keccak160::hashv(&[[0u8].as_ref(), msg]);
+            assert!(expected_accumulator.nodes.contains(&msg_hash));
+            let msg_proof = expected_accumulator.prove(msg);
+            assert!(msg_proof.is_some());
+            let msg_proof = msg_proof.unwrap();
+            assert!(expected_accumulator.check(msg_proof, msg));
+        }
+
+        // verify accumulator state account
+        let accumulator_state = get_accumulator_state(&bank, ring_index);
+        let acc_state_magic = &accumulator_state[..4];
+        assert_eq!(acc_state_magic, b"PAS1");
+        let mut cursor = std::io::Cursor::new(&accumulator_state[4..]);
+        let num_elems = cursor.read_u32::<LittleEndian>().unwrap();
+        for _ in 0..(num_elems as usize) {
+            let element_len = cursor.read_u32::<LittleEndian>().unwrap();
+            let mut element_data = vec![0u8; element_len as usize];
+            cursor.read_exact(&mut element_data).unwrap();
+
+            let elem_hash = Keccak160::hashv(&[[0u8].as_ref(), element_data.as_slice()]);
+            assert!(expected_accumulator.nodes.contains(&elem_hash));
+            let elem_proof = expected_accumulator.prove(element_data.as_slice());
+            assert!(elem_proof.is_some());
+
+            let elem_proof = elem_proof.unwrap();
+            assert!(expected_accumulator.check(elem_proof, element_data.as_slice()));
+        }
+
+        // verify sequence_tracker increments
+        sequence_tracker = get_acc_sequence_tracker(&bank);
+        assert_eq!(sequence_tracker.sequence, message_sequence + 1);
+
+        // verify ring buffer cycles
+        let target_slot = bank.slot() + 9998;
+        // advance 9998 slots using warp_from_parent since doing large loops
+        // with new_from_parent takes a long time
+        let warped_bank = Bank::warp_from_parent(&Arc::new(bank), &Pubkey::default(), target_slot);
+
+        // advance one more slot
+        bank = new_from_parent(&Arc::new(warped_bank));
+
+        // accumulator state should still be the same before looping around
+        let accumulator_state_after_skip = get_accumulator_state(&bank, ring_index);
+        assert_eq!(&accumulator_state[4..], &accumulator_state_after_skip[4..]);
+
+        let message_time_1 = bank.clock().unix_timestamp;
+        let message_slot_1 = bank.clock().slot;
+        let ring_index_1 = (message_slot_1 % 10_000) as u32;
+        assert_eq!(ring_index, ring_index_1);
+
+        sequence_tracker = get_acc_sequence_tracker(&bank);
+        let message_sequence_1 = sequence_tracker.sequence;
+
+        // insert new message to verify ring buffer cycles and overwrites old message
+        // at ring index
+        let message_0 = vec![1u8; 127];
+        let message_1 = vec![2u8; 127];
+        let message_2 = vec![3u8; 254];
+
+        let updated_messages = vec![message_1.clone(), message_2.clone(), message_0.clone()];
+
+        let updated_message_buffer_bytes = create_message_buffer_bytes(updated_messages.clone());
+        price_message_account.set_data(updated_message_buffer_bytes);
+
+        // Store Message account so the accumulator sysvar updater can find it.
+        bank.store_account(&price_message_key.pubkey(), &price_message_account);
+
+        // Run accumulator, update clock & other sysvars etc
+        bank = new_from_parent(&Arc::new(bank));
+
+        let updated_wormhole_message_account = get_wormhole_message_account(&bank, ring_index_1);
+
+        let updated_wormhole_message =
+            PostedMessageUnreliableData::deserialize(&mut updated_wormhole_message_account.data())
+                .unwrap();
+
+        let updated_messages = updated_messages
+            .iter()
+            .map(|m| m.as_slice())
+            .collect::<Vec<_>>();
+        let updated_accumulator_elements = updated_messages
+            .clone()
+            .into_iter()
+            .sorted_unstable()
+            .dedup();
+
+        let expected_accumulator =
+            MerkleAccumulator::<Keccak160>::from_set(updated_accumulator_elements).unwrap();
+        let expected_wormhole_message_payload = expected_accumulator.serialize(ring_index);
+        assert_eq!(
+            updated_wormhole_message.message.payload,
+            expected_wormhole_message_payload
+        );
+
+        let expected_wormhole_message = PostedMessageUnreliableData {
+            message: MessageData {
+                vaa_version: 1,
+                consistency_level: 1,
+                vaa_time: 1u32,
+                vaa_signature_account: Pubkey::default().to_bytes(),
+                submission_time: message_time_1 as u32,
+                nonce: 0,
+                sequence: message_sequence_1,
+                emitter_chain: 26,
+                emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
+                payload: expected_accumulator.serialize(ring_index_1),
+            },
+        };
+
+        let expected_wormhole_message_data = expected_wormhole_message.try_to_vec().unwrap();
+
+        assert_eq!(
+            updated_wormhole_message_account.data(),
+            expected_wormhole_message_data
+        );
+
         // TODO: Should be done as additional tests.
         //
         // 1. Verify the accumulator state stays intact after the bank is advanced.
+        //      done in this test but can be moved to a separate test.
         // 2. Intentionally add corrupted accounts that do not appear in the accumulator.
         // 3. Check if message offset is > message size to prevent validator crash.
     }
