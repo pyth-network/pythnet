@@ -2566,6 +2566,9 @@ impl Bank {
                     }
 
                     let end_offset = header_len + end;
+                    if end_offset as usize > data.len() {
+                        break;
+                    }
                     let accumulator_input_data = &data[header_begin as usize..end_offset as usize];
                     inputs.push(accumulator_input_data);
                     header_begin = end_offset;
