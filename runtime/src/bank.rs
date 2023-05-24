@@ -181,6 +181,7 @@ mod transaction_account_state_info;
 pub const SECONDS_PER_YEAR: f64 = 365.25 * 24.0 * 60.0 * 60.0;
 
 pub const MAX_LEADER_SCHEDULE_STAKES: Epoch = 5;
+pub const ACCUMULATOR_RING_SIZE: u32 = 10_000;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct RentDebit {
@@ -1519,13 +1520,17 @@ impl Bank {
             }
             bank.update_stake_history(None);
         }
-        bank.update_accumulator();
         bank.update_clock(None);
 
         bank.update_rent();
         bank.update_epoch_schedule();
         bank.update_recent_blockhashes();
         bank.fill_missing_sysvar_cache_entries();
+
+        // Update the accumulator last to make sure that the solana bank is in a
+        // fully updated state before the accumulator is used.
+        bank.update_accumulator();
+
         bank
     }
 
@@ -1878,9 +1883,12 @@ impl Bank {
             |_| {
                 new.update_slot_hashes();
                 new.update_stake_history(Some(parent_epoch));
-                new.update_accumulator();
                 new.update_clock(Some(parent_epoch));
                 new.update_fees();
+
+                // Update the accumulator last to make sure that all sysvars are in a
+                // fully updated state before the accumulator sysvar updates.
+                new.update_accumulator();
             },
             (),
             "update_sysvars",
@@ -2596,6 +2604,8 @@ impl Bank {
             let acc_state_magic = &mut b"PAS1".to_vec();
             let accounts_data = &mut accounts.clone().collect::<Vec<_>>().try_to_vec()?;
             data.append(acc_state_magic);
+            data.append(&mut self.clock().slot.try_to_vec()?);
+            data.append(&mut ACCUMULATOR_RING_SIZE.try_to_vec()?);
             data.append(accounts_data);
             let owner = solana_sdk::system_program::id();
             let balance = self.get_minimum_balance_for_rent_exemption(data.len());
@@ -2666,7 +2676,7 @@ impl Bank {
                 sequence: sequence.sequence,
                 emitter_chain: 26,
                 emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
-                payload: acc.serialize(ring_index),
+                payload: acc.serialize(self.clock().slot, ACCUMULATOR_RING_SIZE),
             },
         };
 
@@ -15142,18 +15152,13 @@ pub(crate) mod tests {
             true
         );
 
-        // get the timestamp & slot for the message
-        let message_time = bank.clock().unix_timestamp;
-        let message_slot = bank.clock().slot;
-        let ring_index = (message_slot % 10_000) as u32;
-
-        let mut sequence_tracker = get_acc_sequence_tracker(&bank);
-        let message_sequence = sequence_tracker.sequence;
-
-        // Run accumulator again, the feature is now enabled so account data should contain a
-        // wormhole message.
+        // The current sequence value will be used in the message when the bank advances, so we snapshot
+        // it here before advancing the slot so we can assert the correct sequence is present in the message.
+        let sequence_tracker_before_bank_advance = get_acc_sequence_tracker(&bank);
         bank = new_from_parent(&Arc::new(bank));
 
+        // get the timestamp & slot for the message
+        let ring_index = (bank.clock().slot % ACCUMULATOR_RING_SIZE as u64) as u32;
         let wormhole_message_account = get_wormhole_message_account(&bank, ring_index);
 
         assert_ne!(wormhole_message_account.data().len(), 0);
@@ -15165,7 +15170,8 @@ pub(crate) mod tests {
         let accumulator_elements = messages.clone().into_iter().sorted_unstable().dedup();
         let expected_accumulator =
             MerkleAccumulator::<Keccak160>::from_set(accumulator_elements).unwrap();
-        let expected_wormhole_message_payload = expected_accumulator.serialize(ring_index);
+        let expected_wormhole_message_payload =
+            expected_accumulator.serialize(bank.clock().slot, ACCUMULATOR_RING_SIZE);
         assert_eq!(
             wormhole_message.message.payload,
             expected_wormhole_message_payload
@@ -15177,37 +15183,40 @@ pub(crate) mod tests {
                 consistency_level: 1,
                 vaa_time: 1u32,
                 vaa_signature_account: Pubkey::default().to_bytes(),
-                submission_time: message_time as u32,
+                submission_time: bank.clock().unix_timestamp as u32,
                 nonce: 0,
-                sequence: message_sequence,
+                sequence: sequence_tracker_before_bank_advance.sequence, // sequence is incremented after the message is processed
                 emitter_chain: 26,
                 emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
-                payload: expected_accumulator.serialize(ring_index),
+                payload: expected_wormhole_message_payload,
             },
         };
 
-        let expected_wormhole_message_data = expected_wormhole_message.try_to_vec().unwrap();
-
         assert_eq!(
             wormhole_message_account.data().to_vec(),
-            expected_wormhole_message_data
+            expected_wormhole_message.try_to_vec().unwrap()
         );
 
         // verify hashes verify in accumulator
         for msg in messages {
             let msg_hash = Keccak160::hashv(&[[0u8].as_ref(), msg]);
+            let msg_proof = expected_accumulator.prove(msg).unwrap();
+
             assert!(expected_accumulator.nodes.contains(&msg_hash));
-            let msg_proof = expected_accumulator.prove(msg);
-            assert!(msg_proof.is_some());
-            let msg_proof = msg_proof.unwrap();
             assert!(expected_accumulator.check(msg_proof, msg));
         }
 
         // verify accumulator state account
         let accumulator_state = get_accumulator_state(&bank, ring_index);
         let acc_state_magic = &accumulator_state[..4];
+        let acc_state_slot = LittleEndian::read_u64(&accumulator_state[4..12]);
+        let acc_state_ring_size = LittleEndian::read_u32(&accumulator_state[12..16]);
+
         assert_eq!(acc_state_magic, b"PAS1");
-        let mut cursor = std::io::Cursor::new(&accumulator_state[4..]);
+        assert_eq!(acc_state_slot, bank.clock().slot);
+        assert_eq!(acc_state_ring_size, ACCUMULATOR_RING_SIZE);
+
+        let mut cursor = std::io::Cursor::new(&accumulator_state[16..]);
         let num_elems = cursor.read_u32::<LittleEndian>().unwrap();
         for _ in 0..(num_elems as usize) {
             let element_len = cursor.read_u32::<LittleEndian>().unwrap();
@@ -15215,41 +15224,49 @@ pub(crate) mod tests {
             cursor.read_exact(&mut element_data).unwrap();
 
             let elem_hash = Keccak160::hashv(&[[0u8].as_ref(), element_data.as_slice()]);
-            assert!(expected_accumulator.nodes.contains(&elem_hash));
-            let elem_proof = expected_accumulator.prove(element_data.as_slice());
-            assert!(elem_proof.is_some());
+            let elem_proof = expected_accumulator.prove(element_data.as_slice()).unwrap();
 
-            let elem_proof = elem_proof.unwrap();
+            assert!(expected_accumulator.nodes.contains(&elem_hash));
             assert!(expected_accumulator.check(elem_proof, element_data.as_slice()));
         }
 
         // verify sequence_tracker increments
-        sequence_tracker = get_acc_sequence_tracker(&bank);
-        assert_eq!(sequence_tracker.sequence, message_sequence + 1);
+        assert_eq!(
+            get_acc_sequence_tracker(&bank).sequence,
+            sequence_tracker_before_bank_advance.sequence + 1
+        );
 
         // verify ring buffer cycles
-        let target_slot = bank.slot() + 9998;
-        // advance 9998 slots using warp_from_parent since doing large loops
-        // with new_from_parent takes a long time
-        let warped_bank = Bank::warp_from_parent(&Arc::new(bank), &Pubkey::default(), target_slot);
+        let ring_index_before_buffer_cycle =
+            (bank.clock().slot % ACCUMULATOR_RING_SIZE as u64) as u32;
+        let target_slot = bank.slot() + ACCUMULATOR_RING_SIZE as u64;
+        // advance ACCUMULATOR_RING_SIZE slots using warp_from_parent since doing large loops
+        // with new_from_parent takes a long time. warp_from_parent results in a bank that is frozen.
+        bank = Bank::warp_from_parent(&Arc::new(bank), &Pubkey::default(), target_slot);
 
-        // advance one more slot
-        bank = new_from_parent(&Arc::new(warped_bank));
+        // accumulator messages should still be the same before looping around
+        let ring_index_after_buffer_cycle =
+            (bank.clock().slot % ACCUMULATOR_RING_SIZE as u64) as u32;
+        assert_eq!(
+            ring_index_before_buffer_cycle,
+            ring_index_after_buffer_cycle
+        );
 
-        // accumulator state should still be the same before looping around
-        let accumulator_state_after_skip = get_accumulator_state(&bank, ring_index);
-        assert_eq!(&accumulator_state[4..], &accumulator_state_after_skip[4..]);
+        let accumulator_state_after_skip =
+            get_accumulator_state(&bank, ring_index_after_buffer_cycle);
+        assert_eq!(
+            &accumulator_state[16..],
+            &accumulator_state_after_skip[16..]
+        );
 
-        let message_time_1 = bank.clock().unix_timestamp;
-        let message_slot_1 = bank.clock().slot;
-        let ring_index_1 = (message_slot_1 % 10_000) as u32;
-        assert_eq!(ring_index, ring_index_1);
+        // insert new message to make sure the update is written in the right position
+        // in the ring buffer and overwrites the existing message
 
-        sequence_tracker = get_acc_sequence_tracker(&bank);
-        let message_sequence_1 = sequence_tracker.sequence;
+        // advance the bank to unfreeze it (to be able to store accounts). see the comment on warp_from_parent above.
+        bank = new_from_parent(&Arc::new(bank));
 
-        // insert new message to verify ring buffer cycles and overwrites old message
-        // at ring index
+        let wh_sequence_before_acc_update = get_acc_sequence_tracker(&bank).sequence;
+
         let message_0 = vec![1u8; 127];
         let message_1 = vec![2u8; 127];
         let message_2 = vec![3u8; 254];
@@ -15265,7 +15282,8 @@ pub(crate) mod tests {
         // Run accumulator, update clock & other sysvars etc
         bank = new_from_parent(&Arc::new(bank));
 
-        let updated_wormhole_message_account = get_wormhole_message_account(&bank, ring_index_1);
+        let ring_index = (bank.clock().slot % ACCUMULATOR_RING_SIZE as u64) as u32;
+        let updated_wormhole_message_account = get_wormhole_message_account(&bank, ring_index);
 
         let updated_wormhole_message =
             PostedMessageUnreliableData::deserialize(&mut updated_wormhole_message_account.data())
@@ -15283,10 +15301,9 @@ pub(crate) mod tests {
 
         let expected_accumulator =
             MerkleAccumulator::<Keccak160>::from_set(updated_accumulator_elements).unwrap();
-        let expected_wormhole_message_payload = expected_accumulator.serialize(ring_index);
         assert_eq!(
             updated_wormhole_message.message.payload,
-            expected_wormhole_message_payload
+            expected_accumulator.serialize(bank.clock().slot, ACCUMULATOR_RING_SIZE)
         );
 
         let expected_wormhole_message = PostedMessageUnreliableData {
@@ -15295,20 +15312,18 @@ pub(crate) mod tests {
                 consistency_level: 1,
                 vaa_time: 1u32,
                 vaa_signature_account: Pubkey::default().to_bytes(),
-                submission_time: message_time_1 as u32,
+                submission_time: bank.clock().unix_timestamp as u32,
                 nonce: 0,
-                sequence: message_sequence_1,
+                sequence: wh_sequence_before_acc_update,
                 emitter_chain: 26,
                 emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
-                payload: expected_accumulator.serialize(ring_index_1),
+                payload: expected_accumulator.serialize(bank.clock().slot, ACCUMULATOR_RING_SIZE),
             },
         };
 
-        let expected_wormhole_message_data = expected_wormhole_message.try_to_vec().unwrap();
-
         assert_eq!(
             updated_wormhole_message_account.data(),
-            expected_wormhole_message_data
+            expected_wormhole_message.try_to_vec().unwrap()
         );
 
         // TODO: Should be done as additional tests.
