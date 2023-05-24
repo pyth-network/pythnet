@@ -95,4 +95,4 @@ exclude = [
 resolver = "2"
 
 [patch.crates-io]
-serde_wormhole = { git = "https://github.com/wormhole-foundation/wormhole" }
+serde_wormhole = { git = "https://github.com/wormhole-foundation/wormhole", tag = "v2.17.1" }
