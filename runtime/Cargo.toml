@@ -32,7 +32,7 @@ num-derive = { version = "0.3" }
 num-traits = { version = "0.2" }
 num_cpus = "1.13.1"
 ouroboros = "0.14.2"
-pythnet-sdk = { git = "https://github.com/pyth-network/pyth-crosschain", version = "1.13.6" }
+pythnet-sdk = { git = "https://github.com/pyth-network/pyth-crosschain", version = "1.13.6", rev = "407252000643f0c933ad23194ceabb6a6f0a4bf9" }
 rand = "0.7.0"
 rayon = "1.5.1"
 regex = "1.5.4"
