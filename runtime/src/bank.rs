@@ -2510,10 +2510,11 @@ impl Bank {
             .feature_set
             .is_active(&feature_set::enable_accumulator_sysvar::id())
         {
+            info!("Accumulator: Skipping because the feature is disabled. Slot: {}", self.slot());
             return;
         }
  
-        info!("Updating accumulator. Parent_epoch: {}", self.slot());
+        info!("Accumulator: Updating accumulator. Slot: {}", self.slot());
         if let Err(e) = self.update_accumulator_impl() {
             error!("Error updating accumulator: {:?}", e);
         }
@@ -2624,6 +2625,7 @@ impl Bank {
 
         // Write the Account Set into `accumulator_state` so that the hermes application can
         // request historical data to prove.
+        info!("Accumulator: Writing accumulator state to {:?}", accumulator_account);
         self.store_account_and_update_capitalization(&accumulator_account, &accumulator_data);
 
         Ok(())
@@ -2663,7 +2665,7 @@ impl Bank {
                 .unwrap_or(AccumulatorSequenceTracker { sequence: 0 })
         };
 
-        info!("accumulator sequence: {:?}", sequence.sequence);
+        debug!("Accumulator: accumulator sequence: {:?}", sequence.sequence);
 
         // Generate the Message to emit via Wormhole.
         let message = PostedMessageUnreliableData {
@@ -2681,7 +2683,7 @@ impl Bank {
             },
         };
 
-        info!("msg_data.message: {:?}", message.message);
+        debug!("Accumulator: Wormhole message data: {:?}", message.message);
         let wormhole_pid = self.env_pubkey_or(
             "WORMHOLE_PID",
             Pubkey::new_from_array(pythnet::WORMHOLE_PID),
@@ -2720,6 +2722,8 @@ impl Bank {
         );
 
         self.store_account_and_update_capitalization(&accumulator_sequence_addr, &sequence_account);
+
+        info!("Accumulator: Writing wormhole message to {:?}", message_pda);
         self.store_account_and_update_capitalization(&message_pda, &message_account);
 
         Ok(())
