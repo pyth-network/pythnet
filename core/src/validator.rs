@@ -583,6 +583,18 @@ impl Validator {
                 info!("Hard forks: {:?}", hard_forks);
             }
         }
+        let pyth_keys = bank.get_accumulator_keys();
+        for (key_name, pk_res) in pyth_keys {
+            match pk_res {
+                Ok(pk) => {
+                    info!("Accumulator {}: {}", key_name, pk);
+                }
+                Err(err) => {
+                    error!("Failed to get Accumulator {}: {:?}", key_name, err);
+                    abort();
+                }
+            }
+        }
 
         node.info.wallclock = timestamp();
         node.info.shred_version = compute_shred_version(
