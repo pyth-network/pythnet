@@ -25,7 +25,7 @@ lazy_static = "1.4.0"
 log = "0.4.14"
 num-derive = "0.3"
 num-traits = "0.2"
-pythnet-sdk = { git = "https://github.com/pyth-network/pyth-crosschain", version = "1.13.6", rev = "407252000643f0c933ad23194ceabb6a6f0a4bf9" }
+pythnet-sdk = { git = "https://github.com/pyth-network/pyth-crosschain", version = "1.13.6", rev = "e670f57f89b05398ca352e4accb1e32724a8e1b4" }
 rustversion = "1.0.3"
 serde = "1.0.112"
 schemars = "0.8.8"
