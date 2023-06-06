@@ -1284,7 +1284,7 @@ pub struct CommitTransactionCounts {
 /// Accumulator specific error type. It would be nice to use `transaction::Error` but it does
 /// not include any `Custom` style variant we can leverage, so we introduce our own.
 #[derive(Debug, thiserror::Error)]
-enum AccumulatorUpdateError {
+pub enum AccumulatorUpdateError {
     #[error("get_program_accounts failed to return accounts")]
     GetProgramAccounts,
 
@@ -2705,7 +2705,7 @@ impl Bank {
             account
         };
 
-        // Serialize into (and create if necesary) the message account.
+        // Serialize into (and create if necessary) the message account.
         let message = message
             .try_to_vec()
             .map_err(|_| AccumulatorUpdateError::FailedMessageSerialization)?;
@@ -2745,6 +2745,40 @@ impl Bank {
             .ok()
             .transpose()?
             .unwrap_or(default))
+    }
+
+    /// Get all accumulator related pubkeys from environment variables
+    /// or return default if the variable is not set.
+    pub fn get_accumulator_keys(
+        &self,
+    ) -> Vec<(&str, std::result::Result<Pubkey, AccumulatorUpdateError>)> {
+        use pythnet_sdk::{pythnet, ACCUMULATOR_EMITTER_ADDRESS, MESSAGE_BUFFER_PID};
+        let accumulator_keys = vec![
+            (
+                "MESSAGE_BUFFER_PID",
+                Pubkey::new_from_array(MESSAGE_BUFFER_PID),
+            ),
+            // accumulator emitter address should always be the same regardless
+            // of environment but checking here for completeness
+            (
+                "ACCUMULATOR_EMITTER_ADDR",
+                Pubkey::new_from_array(ACCUMULATOR_EMITTER_ADDRESS),
+            ),
+            (
+                "ACCUMULATOR_SEQUENCE_ADDR",
+                Pubkey::new_from_array(pythnet::ACCUMULATOR_SEQUENCE_ADDR),
+            ),
+            (
+                "WORMHOLE_PID",
+                Pubkey::new_from_array(pythnet::WORMHOLE_PID),
+            ),
+        ];
+        let accumulator_pubkeys: Vec<(&str, std::result::Result<Pubkey, AccumulatorUpdateError>)> =
+            accumulator_keys
+                .iter()
+                .map(|(k, d)| (*k, self.env_pubkey_or(k, *d)))
+                .collect();
+        accumulator_pubkeys
     }
 
     pub fn epoch_duration_in_years(&self, prev_epoch: Epoch) -> f64 {
@@ -15335,6 +15369,27 @@ pub(crate) mod tests {
         //      done in this test but can be moved to a separate test.
         // 2. Intentionally add corrupted accounts that do not appear in the accumulator.
         // 3. Check if message offset is > message size to prevent validator crash.
+    }
+
+    #[test]
+    fn test_get_accumulator_keys() {
+        use pythnet_sdk::{pythnet, ACCUMULATOR_EMITTER_ADDRESS, MESSAGE_BUFFER_PID};
+        let leader_pubkey = solana_sdk::pubkey::new_rand();
+        let GenesisConfigInfo { genesis_config, .. } =
+            create_genesis_config_with_leader(5, &leader_pubkey, 3);
+        let bank = Bank::new_for_tests(&genesis_config);
+        let accumulator_keys: Vec<Pubkey> = bank
+            .get_accumulator_keys()
+            .iter()
+            .map(|(_, pk_res)| *pk_res.as_ref().unwrap())
+            .collect();
+        let expected_pyth_keys = vec![
+            Pubkey::new_from_array(MESSAGE_BUFFER_PID),
+            Pubkey::new_from_array(ACCUMULATOR_EMITTER_ADDRESS),
+            Pubkey::new_from_array(pythnet::ACCUMULATOR_SEQUENCE_ADDR),
+            Pubkey::new_from_array(pythnet::WORMHOLE_PID),
+        ];
+        assert_eq!(accumulator_keys, expected_pyth_keys);
     }
 
     fn poh_estimate_offset(bank: &Bank) -> Duration {
