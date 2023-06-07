@@ -2656,6 +2656,11 @@ impl Bank {
             Pubkey::new_from_array(pythnet::ACCUMULATOR_SEQUENCE_ADDR),
         )?;
 
+        let accumulator_emitter_addr = self.env_pubkey_or(
+            "ACCUMULATOR_EMITTER_ADDR",
+            Pubkey::new_from_array(ACCUMULATOR_EMITTER_ADDRESS),
+        )?;
+
         // Wormhole uses a Sequence account that is incremented each time a message is posted. As
         // we aren't calling Wormhole we need to bump this ourselves. If it doesn't exist, we just
         // create it instead.
@@ -2681,7 +2686,7 @@ impl Bank {
                 nonce: 0,
                 sequence: sequence.sequence,
                 emitter_chain: 26,
-                emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
+                emitter_address: accumulator_emitter_addr.to_bytes(),
                 payload: acc.serialize(self.slot(), ACCUMULATOR_RING_SIZE),
             },
         };
