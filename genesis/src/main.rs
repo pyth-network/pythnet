@@ -12,7 +12,7 @@ use {
         },
     },
     solana_entry::poh::compute_hashes_per_tick,
-    solana_genesis::{genesis_accounts::add_genesis_accounts, Base64Account},
+    solana_genesis::Base64Account,
     solana_ledger::{blockstore::create_new_ledger, blockstore_db::LedgerColumnOptions},
     solana_runtime::hardened_unpack::MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
     solana_sdk::{
@@ -565,8 +565,10 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     }
 
     solana_stake_program::add_genesis_accounts(&mut genesis_config);
-    if genesis_config.cluster_type == ClusterType::Development {
-        solana_runtime::genesis_utils::activate_all_features(&mut genesis_config);
+
+    // Enable v1.10.24 features present at pythnet launch time.
+    if genesis_config.cluster_type == ClusterType::MainnetBeta {
+        solana_runtime::genesis_utils::activate_pythnet_genesis_features(&mut genesis_config);
     }
 
     if let Some(files) = matches.values_of("primordial_accounts_file") {
@@ -578,13 +580,16 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     let max_genesis_archive_unpacked_size =
         value_t_or_exit!(matches, "max_genesis_archive_unpacked_size", u64);
 
-    let issued_lamports = genesis_config
-        .accounts
-        .iter()
-        .map(|(_key, account)| account.lamports)
-        .sum::<u64>();
-
-    add_genesis_accounts(&mut genesis_config, issued_lamports - faucet_lamports);
+    // Commented out based on original Pythnet genesis changes. We
+    // skip add_genesis_accounts() to prevent investor accounts from
+    // getting funds on Pythnet.
+    // let issued_lamports = genesis_config
+    //     .accounts
+    //     .iter()
+    //     .map(|(_key, account)| account.lamports)
+    //     .sum::<u64>();
+    //
+    // add_genesis_accounts(&mut genesis_config, issued_lamports - faucet_lamports);
 
     if let Some(values) = matches.values_of("bpf_program") {
         let values: Vec<&str> = values.collect::<Vec<_>>();
