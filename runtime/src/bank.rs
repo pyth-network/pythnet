@@ -116,7 +116,7 @@ use {
         hash::{extend_and_hash, hashv, Hash},
         incinerator,
         inflation::Inflation,
-        instruction::CompiledInstruction,
+        instruction::{CompiledInstruction, InstructionError},
         lamports::LamportsError,
         message::{AccountKeys, SanitizedMessage},
         native_loader,
@@ -4286,6 +4286,28 @@ impl Bank {
         timings: &mut ExecuteTimings,
         error_counters: &mut TransactionErrorMetrics,
     ) -> TransactionExecutionResult {
+        fn transaction_accounts_lamports_sum(
+            accounts: &[(Pubkey, AccountSharedData)],
+            message: &SanitizedMessage,
+        ) -> Option<u128> {
+            let mut lamports_sum = 0u128;
+            for i in 0..message.account_keys().len() {
+                let account = match accounts.get(i) {
+                    Some((_, account)) => account,
+                    None => return None,
+                };
+
+                lamports_sum = match lamports_sum.checked_add(u128::from(account.lamports())) {
+                    Some(lamports_sum) => lamports_sum,
+                    None => {
+                        return None;
+                    }
+                }
+            }
+
+            Some(lamports_sum)
+        }
+
         let mut get_executors_time = Measure::start("get_executors_time");
         let executors = self.get_executors(&loaded_transaction.accounts);
         get_executors_time.stop();
@@ -4296,6 +4318,20 @@ impl Bank {
 
         let mut transaction_accounts = Vec::new();
         std::mem::swap(&mut loaded_transaction.accounts, &mut transaction_accounts);
+
+        let lamports_before_tx =
+            match transaction_accounts_lamports_sum(&transaction_accounts, tx.message()) {
+                Some(lamports) => lamports,
+                None => {
+                    return TransactionExecutionResult::NotExecuted(
+                        TransactionError::InstructionError(
+                            0,
+                            InstructionError::UnbalancedInstruction,
+                        ),
+                    )
+                }
+            };
+
         let mut transaction_context = TransactionContext::new(
             transaction_accounts,
             compute_budget.max_invoke_depth.saturating_add(1),
@@ -4384,6 +4420,18 @@ impl Bank {
             });
 
         let (accounts, instruction_trace) = transaction_context.deconstruct();
+
+        if status.is_ok()
+            && transaction_accounts_lamports_sum(&accounts, tx.message())
+                .filter(|lamports_after_tx| lamports_before_tx == *lamports_after_tx)
+                .is_none()
+        {
+            return TransactionExecutionResult::NotExecuted(TransactionError::InstructionError(
+                0,
+                InstructionError::UnbalancedInstruction,
+            ));
+        }
+
         loaded_transaction.accounts = accounts;
 
         let inner_instructions = if enable_cpi_recording {
