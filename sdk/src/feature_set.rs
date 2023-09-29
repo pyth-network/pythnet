@@ -475,6 +475,10 @@ pub mod enable_accumulator_sysvar {
     solana_sdk::declare_id!("BawYFA2oeA4CacxgQgLn6ZwRWDq1ZPXruUuEbko8oPT5");
 }
 
+pub mod move_accumulator_to_end_of_block {
+    solana_sdk::declare_id!("Ecz7cAP89wKDAoEJYhovFcxMcXRJiWGfFdefcSrx2Ynr");
+}
+
 lazy_static! {
     /// Map of feature identifiers to user-visible description
     /// Features commented out as per original Pythnet genesis.
@@ -589,6 +593,7 @@ lazy_static! {
         (enable_big_mod_exp_syscall::id(), "add big_mod_exp syscall #28503"),
         (disable_builtin_loader_ownership_chains::id(), "disable builtin loader ownership chains #29956"),
         (enable_accumulator_sysvar::id(), "enable accumulator sysvar #<GH_ISSUE_NUMBER>"),
+        (move_accumulator_to_end_of_block::id(), "move accumulator to end of block #<GH_ISSUE_NUMBER>"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
@@ -599,7 +604,7 @@ lazy_static! {
     /// splitting off Solana v1.10.24. Additional features should be
     /// enabled manually (e.g. accumulator sysvar)
     pub static ref PYTHNET_GENESIS_FEATURES: HashMap<Pubkey, &'static str> = [
-	(secp256k1_program_enabled::id(), "secp256k1 program"),
+        (secp256k1_program_enabled::id(), "secp256k1 program"),
         (deprecate_rewards_sysvar::id(), "deprecate unused rewards sysvar"),
         (spl_token_v2_multisig_fix::id(), "spl-token multisig fix"),
         (no_overflow_rent_distribution::id(), "no overflow rent distribution"),
@@ -679,18 +684,18 @@ lazy_static! {
         (enable_durable_nonce::id(), "enable durable nonce #25744"),
         (executables_incur_cpi_data_cost::id(), "Executables incure CPI data costs"),
 
-	// Features we opted out of for Pythnet genesis, listed for reference.
+        // Features we opted out of for Pythnet genesis, listed for reference.
 
-	// Disable validator staking rewards
-	// (pico_inflation::id(), "pico inflation"),
+        // Disable validator staking rewards
+        // (pico_inflation::id(), "pico inflation"),
         // (full_inflation::devnet_and_testnet::id(), "full inflation on devnet and testnet"),
         // (full_inflation::mainnet::certusone::enable::id(), "full inflation enabled by Certus One"),
         // (full_inflation::mainnet::certusone::vote::id(), "community vote allowing Certus One to enable full inflation"),
 
-	// Prevent third-party program deployments - it becomes more
-	// expensive, account creation uses older harsher formula.
+        // Prevent third-party program deployments - it becomes more
+        // expensive, account creation uses older harsher formula.
         // (tx_wide_compute_cap::id(), "transaction wide compute cap"),
-	// (reduce_required_deploy_balance::id(), "reduce required payer balance for program deploys"),
+        // (reduce_required_deploy_balance::id(), "reduce required payer balance for program deploys"),
     ]
     .iter()
     .cloned()
