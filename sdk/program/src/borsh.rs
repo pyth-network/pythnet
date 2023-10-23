@@ -8,7 +8,8 @@
 //! be removed in a future release
 //!
 //! [borsh]: https://borsh.io/
-use borsh::{maybestd::io::Error, BorshDeserialize, BorshSchema, BorshSerialize};
+use borsh::{maybestd::io::Error, BorshSchema};
+pub use borsh::{BorshDeserialize, BorshSerialize};
 
 /// Get the worst-case packed length for the given BorshSchema
 ///
@@ -171,6 +172,16 @@ macro_rules! impl_get_instance_packed_len {
     }
 }
 pub(crate) use impl_get_instance_packed_len;
+
+macro_rules! impl_try_to_vec {
+    ($borsh:ident $(,#[$meta:meta])?) => {
+        $(#[$meta])?
+        pub fn try_to_vec<T: $borsh::BorshSerialize>(instance: &T) -> Result<Vec<u8>, $borsh::maybestd::io::Error> {
+            instance.try_to_vec()
+        }
+    }
+}
+pub(crate) use impl_try_to_vec;
 
 #[cfg(test)]
 macro_rules! impl_tests {

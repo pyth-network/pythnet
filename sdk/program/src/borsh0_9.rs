@@ -7,6 +7,7 @@
 //! [borsh]: https://borsh.io/
 use crate::borsh::{
     impl_get_instance_packed_len, impl_get_packed_len, impl_try_from_slice_unchecked,
+    impl_try_to_vec,
 };
 
 impl_get_packed_len!(
@@ -24,6 +25,13 @@ impl_try_from_slice_unchecked!(
     )]
 );
 impl_get_instance_packed_len!(
+    borsh0_9,
+    #[deprecated(
+        since = "1.17.0",
+        note = "Please upgrade to Borsh 0.10 and use `borsh0_10::get_instance_packed_len` instead"
+    )]
+);
+impl_try_to_vec!(
     borsh0_9,
     #[deprecated(
         since = "1.17.0",

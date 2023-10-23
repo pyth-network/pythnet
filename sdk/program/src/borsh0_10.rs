@@ -5,6 +5,7 @@
 use crate::borsh::{
     impl_get_instance_packed_len, impl_get_packed_len, impl_try_from_slice_unchecked,
 };
+pub use crate::borsh::{BorshDeserialize, BorshSerialize};
 
 impl_get_packed_len!(borsh);
 impl_try_from_slice_unchecked!(borsh);
