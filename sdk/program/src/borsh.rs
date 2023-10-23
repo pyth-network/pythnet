@@ -2,7 +2,7 @@
 //! Utilities for the [borsh] serialization format.
 //!
 //! [borsh]: https://borsh.io/
-use {
+pub use {
     borsh::{
         maybestd::io::{Error, Write},
         schema::{BorshSchema, Declaration, Definition, Fields},

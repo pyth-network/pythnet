@@ -243,8 +243,6 @@ impl Blockstore {
                 .blockstore_directory(),
         );
 
-        adjust_ulimit_nofile(options.enforce_ulimit_nofile)?;
-
         // Open the database
         let mut measure = Measure::start("open");
         info!("Opening database at {:?}", blockstore_path);

@@ -544,6 +544,10 @@ pub mod enable_request_heap_frame_ix {
     solana_sdk::declare_id!("Hr1nUA9b7NJ6eChS26o7Vi8gYYDDwWD3YeBfzJkTbU86");
 }
 
+pub mod enable_accumulator_sysvar {
+    solana_sdk::declare_id!("BawYFA2oeA4CacxgQgLn6ZwRWDq1ZPXruUuEbko8oPT5");
+}
+
 lazy_static! {
     /// Map of feature identifiers to user-visible description
     pub static ref FEATURE_NAMES: HashMap<Pubkey, &'static str> = [
@@ -674,11 +678,110 @@ lazy_static! {
         (keep_merkle_shreds::id(), "keep merkle shreds #29711"),
         (move_serialized_len_ptr_in_cpi::id(), "cpi ignore serialized_len_ptr #29592"),
         (enable_request_heap_frame_ix::id(), "Enable transaction to request heap frame using compute budget instruction #30076"),
+        (enable_accumulator_sysvar::id(), "enable accumulator sysvar #<GH_ISSUE_NUMBER>"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
     .cloned()
     .collect();
+
+   /// All features that were enabled at time of Pythnet genesis
+   /// splitting off Solana v1.10.24. Additional features should be
+   /// enabled manually (e.g. accumulator sysvar)
+   pub static ref PYTHNET_GENESIS_FEATURES: HashMap<Pubkey, &'static str> = [
+       (secp256k1_program_enabled::id(), "secp256k1 program"),
+       (deprecate_rewards_sysvar::id(), "deprecate unused rewards sysvar"),
+       (spl_token_v2_multisig_fix::id(), "spl-token multisig fix"),
+       (no_overflow_rent_distribution::id(), "no overflow rent distribution"),
+       (filter_stake_delegation_accounts::id(), "filter stake_delegation_accounts #14062"),
+       (require_custodian_for_locked_stake_authorize::id(), "require custodian to authorize withdrawer change for locked stake"),
+       (spl_token_v2_self_transfer_fix::id(), "spl-token self-transfer fix"),
+       (warp_timestamp_again::id(), "warp timestamp again, adjust bounding to 25% fast 80% slow #15204"),
+       (check_init_vote_data::id(), "check initialized Vote data"),
+       (secp256k1_recover_syscall_enabled::id(), "secp256k1_recover syscall"),
+       (system_transfer_zero_check::id(), "perform all checks for transfers of 0 lamports"),
+       (blake3_syscall_enabled::id(), "blake3 syscall"),
+       (dedupe_config_program_signers::id(), "dedupe config program signers"),
+       (verify_tx_signatures_len::id(), "prohibit extra transaction signatures"),
+       (vote_stake_checked_instructions::id(), "vote/state program checked instructions #18345"),
+       (rent_for_sysvars::id(), "collect rent from accounts owned by sysvars"),
+       (libsecp256k1_0_5_upgrade_enabled::id(), "upgrade libsecp256k1 to v0.5.0"),
+       (spl_token_v2_set_authority_fix::id(), "spl-token set_authority fix"),
+       (merge_nonce_error_into_system_error::id(), "merge NonceError into SystemError"),
+       (disable_fees_sysvar::id(), "disable fees sysvar"),
+       (stake_merge_with_unmatched_credits_observed::id(), "allow merging active stakes with unmatched credits_observed #18985"),
+       (zk_token_sdk_enabled::id(), "enable Zk Token proof program and syscalls"),
+       (versioned_tx_message_enabled::id(), "enable versioned transaction message processing"),
+       (libsecp256k1_fail_on_bad_count::id(), "fail libsec256k1_verify if count appears wrong"),
+       (instructions_sysvar_owned_by_sysvar::id(), "fix owner for instructions sysvar"),
+       (stake_program_advance_activating_credits_observed::id(), "Enable advancing credits observed for activation epoch #19309"),
+       (demote_program_write_locks::id(), "demote program write locks to readonly, except when upgradeable loader present #19593 #20265"),
+       (ed25519_program_enabled::id(), "enable builtin ed25519 signature verify program"),
+       (return_data_syscall_enabled::id(), "enable sol_{set,get}_return_data syscall"),
+       (sol_log_data_syscall_enabled::id(), "enable sol_log_data syscall"),
+       (stakes_remove_delegation_if_inactive::id(), "remove delegations from stakes cache when inactive"),
+       (do_support_realloc::id(), "support account data reallocation"),
+       (prevent_calling_precompiles_as_programs::id(), "prevent calling precompiles as programs"),
+       (optimize_epoch_boundary_updates::id(), "optimize epoch boundary updates"),
+       (remove_native_loader::id(), "remove support for the native loader"),
+       (send_to_tpu_vote_port::id(), "send votes to the tpu vote port"),
+       (requestable_heap_size::id(), "Requestable heap frame size"),
+       (disable_fee_calculator::id(), "deprecate fee calculator"),
+       (add_compute_budget_program::id(), "Add compute_budget_program"),
+       (nonce_must_be_writable::id(), "nonce must be writable"),
+       (spl_token_v3_3_0_release::id(), "spl-token v3.3.0 release"),
+       (leave_nonce_on_success::id(), "leave nonce as is on success"),
+       (reject_empty_instruction_without_program::id(), "fail instructions which have native_loader as program_id directly"),
+       (fixed_memcpy_nonoverlapping_check::id(), "use correct check for nonoverlapping regions in memcpy syscall"),
+       (reject_non_rent_exempt_vote_withdraws::id(), "fail vote withdraw instructions which leave the account non-rent-exempt"),
+       (evict_invalid_stakes_cache_entries::id(), "evict invalid stakes cache entries on epoch boundaries"),
+       (allow_votes_to_directly_update_vote_state::id(), "enable direct vote state update"),
+       (cap_accounts_data_len::id(), "cap the accounts data len"),
+       (max_tx_account_locks::id(), "enforce max number of locked accounts per transaction"),
+       (require_rent_exempt_accounts::id(), "require all new transaction accounts with data to be rent-exempt"),
+       (filter_votes_outside_slot_hashes::id(), "filter vote slots older than the slot hashes history"),
+       (update_syscall_base_costs::id(), "update syscall base costs"),
+       (vote_withdraw_authority_may_change_authorized_voter::id(), "vote account withdraw authority may change the authorized voter #22521"),
+       (spl_associated_token_account_v1_0_4::id(), "SPL Associated Token Account Program release version 1.0.4, tied to token 3.3.0 #22648"),
+       (reject_vote_account_close_unless_zero_credit_epoch::id(), "fail vote account withdraw to 0 unless account earned 0 credits in last completed epoch"),
+       (add_get_processed_sibling_instruction_syscall::id(), "add add_get_processed_sibling_instruction_syscall"),
+       (disable_bpf_deprecated_load_instructions::id(), "disable ldabs* and ldind* BPF instructions"),
+       (disable_bpf_unresolved_symbols_at_runtime::id(), "disable reporting of unresolved BPF symbols at runtime"),
+       (record_instruction_in_transaction_context_push::id(), "move the CPI stack overflow check to the end of push"),
+       (syscall_saturated_math::id(), "syscalls use saturated math"),
+       (check_physical_overlapping::id(), "check physical overlapping regions"),
+       (limit_secp256k1_recovery_id::id(), "limit secp256k1 recovery id"),
+       (disable_deprecated_loader::id(), "disable the deprecated BPF loader"),
+       (drop_redundant_turbine_path::id(), "drop redundant turbine path"),
+       (spl_token_v3_4_0::id(), "SPL Token Program version 3.4.0 release #24740"),
+       (spl_associated_token_account_v1_1_0::id(), "SPL Associated Token Account Program version 1.1.0 release #24741"),
+       (default_units_per_instruction::id(), "Default max tx-wide compute units calculated per instruction"),
+       (stake_allow_zero_undelegated_amount::id(), "Allow zero-lamport undelegated amount for initialized stakes #24670"),
+       (require_static_program_ids_in_transaction::id(), "require static program ids in versioned transactions"),
+       (add_set_compute_unit_price_ix::id(), "add compute budget ix for setting a compute unit price"),
+       (include_account_index_in_rent_error::id(), "include account index in rent tx error #25190"),
+       (add_shred_type_to_shred_seed::id(), "add shred-type to shred seed #25556"),
+       (warp_timestamp_with_a_vengeance::id(), "warp timestamp again, adjust bounding to 150% slow #25666"),
+       (separate_nonce_from_blockhash::id(), "separate durable nonce and blockhash domains #25744"),
+       (enable_durable_nonce::id(), "enable durable nonce #25744"),
+       (executables_incur_cpi_data_cost::id(), "Executables incure CPI data costs"),
+
+       // Features we opted out of for Pythnet genesis, listed for reference.
+
+       // Disable validator staking rewards
+       // (pico_inflation::id(), "pico inflation"),
+       // (full_inflation::devnet_and_testnet::id(), "full inflation on devnet and testnet"),
+       // (full_inflation::mainnet::certusone::enable::id(), "full inflation enabled by Certus One"),
+       // (full_inflation::mainnet::certusone::vote::id(), "community vote allowing Certus One to enable full inflation"),
+
+       // Prevent third-party program deployments - it becomes more
+       // expensive, account creation uses older harsher formula.
+       // (tx_wide_compute_cap::id(), "transaction wide compute cap"),
+       // (reduce_required_deploy_balance::id(), "reduce required payer balance for program deploys"),
+   ]
+   .iter()
+   .cloned()
+   .collect();
 
     /// Unique identifier of the current software's feature set
     pub static ref ID: Hash = {

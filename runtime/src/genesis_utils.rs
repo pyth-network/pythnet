@@ -200,6 +200,23 @@ pub fn activate_all_features(genesis_config: &mut GenesisConfig) {
     }
 }
 
+/// Pythnet-specific genesis-time features.
+/// Based on v1.10.24 state at pythnet launch.
+pub fn activate_pythnet_genesis_features(genesis_config: &mut GenesisConfig) {
+    // Activate all features at genesis in development mode
+    for (feature_id, _) in &*solana_sdk::feature_set::PYTHNET_GENESIS_FEATURES {
+        genesis_config.accounts.insert(
+            *feature_id,
+            Account::from(feature::create_account(
+                &Feature {
+                    activated_at: Some(0),
+                },
+                std::cmp::max(genesis_config.rent.minimum_balance(Feature::size_of()), 1),
+            )),
+        );
+    }
+}
+
 pub fn activate_feature(genesis_config: &mut GenesisConfig, feature_id: Pubkey) {
     genesis_config.accounts.insert(
         feature_id,
