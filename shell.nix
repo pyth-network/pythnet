@@ -5,10 +5,14 @@
 with pkgs; mkShell {
   buildInputs = [
     clang
+    curl
+    go
+    iconv
     llvmPackages.libclang
     nettle
-    openssl
-    pkgconfig
+    openssl_1_1
+    pkg-config
+    protobuf
     rustup
     systemd
   ];

@@ -1,6 +1,6 @@
 [package]
 name = "solana-client-test"
-version = "1.13.602"
+version = "1.13.603"
 description = "Solana RPC Test"
 authors = ["Solana Maintainers <maintainers@solana.foundation>"]
 repository = "https://github.com/solana-labs/solana"
@@ -14,25 +14,25 @@ publish = false
 futures-util = "0.3.21"
 serde_json = "1.0.79"
 serial_test = "0.6.0"
-solana-client = { path = "../client", version = "=1.13.602" }
-solana-ledger = { path = "../ledger", version = "=1.13.602" }
-solana-measure = { path = "../measure", version = "=1.13.602" }
-solana-merkle-tree = { path = "../merkle-tree", version = "=1.13.602" }
-solana-metrics = { path = "../metrics", version = "=1.13.602" }
-solana-perf = { path = "../perf", version = "=1.13.602" }
-solana-rayon-threadlimit = { path = "../rayon-threadlimit", version = "=1.13.602" }
-solana-rpc = { path = "../rpc", version = "=1.13.602" }
-solana-runtime = { path = "../runtime", version = "=1.13.602" }
-solana-sdk = { path = "../sdk", version = "=1.13.602" }
-solana-streamer = { path = "../streamer", version = "=1.13.602" }
-solana-test-validator = { path = "../test-validator", version = "=1.13.602" }
-solana-transaction-status = { path = "../transaction-status", version = "=1.13.602" }
-solana-version = { path = "../version", version = "=1.13.602" }
+solana-client = { path = "../client", version = "=1.13.603" }
+solana-ledger = { path = "../ledger", version = "=1.13.603" }
+solana-measure = { path = "../measure", version = "=1.13.603" }
+solana-merkle-tree = { path = "../merkle-tree", version = "=1.13.603" }
+solana-metrics = { path = "../metrics", version = "=1.13.603" }
+solana-perf = { path = "../perf", version = "=1.13.603" }
+solana-rayon-threadlimit = { path = "../rayon-threadlimit", version = "=1.13.603" }
+solana-rpc = { path = "../rpc", version = "=1.13.603" }
+solana-runtime = { path = "../runtime", version = "=1.13.603" }
+solana-sdk = { path = "../sdk", version = "=1.13.603" }
+solana-streamer = { path = "../streamer", version = "=1.13.603" }
+solana-test-validator = { path = "../test-validator", version = "=1.13.603" }
+solana-transaction-status = { path = "../transaction-status", version = "=1.13.603" }
+solana-version = { path = "../version", version = "=1.13.603" }
 systemstat = "0.1.10"
 tokio = { version = "~1.14.1", features = ["full"] }
 
 [dev-dependencies]
-solana-logger = { path = "../logger", version = "=1.13.602" }
+solana-logger = { path = "../logger", version = "=1.13.603" }
 
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
