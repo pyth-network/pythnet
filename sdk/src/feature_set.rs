@@ -479,6 +479,10 @@ pub mod move_accumulator_to_end_of_block {
     solana_sdk::declare_id!("Ecz7cAP89wKDAoEJYhovFcxMcXRJiWGfFdefcSrx2Ynr");
 }
 
+pub mod zero_wormhole_message_timestamps {
+    solana_sdk::declare_id!("UMg4wFe51vKLHXpbdKWP8kFHWQBsCfbd67AoiyPSaH2");
+}
+
 lazy_static! {
     /// Map of feature identifiers to user-visible description
     /// Features commented out as per original Pythnet genesis.
@@ -594,6 +598,7 @@ lazy_static! {
         (disable_builtin_loader_ownership_chains::id(), "disable builtin loader ownership chains #29956"),
         (enable_accumulator_sysvar::id(), "enable accumulator sysvar #<GH_ISSUE_NUMBER>"),
         (move_accumulator_to_end_of_block::id(), "move accumulator to end of block #<GH_ISSUE_NUMBER>"),
+        (zero_wormhole_message_timestamps::id(), "use zeroed timestamps in wormhole messages"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
