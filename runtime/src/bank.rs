@@ -2687,17 +2687,34 @@ impl Bank {
 
         // Generate the Message to emit via Wormhole.
         let message = PostedMessageUnreliableData {
-            message: MessageData {
-                vaa_version: 1,
-                consistency_level: 1,
-                vaa_time: 1u32,
-                vaa_signature_account: Pubkey::default().to_bytes(),
-                submission_time: self.clock().unix_timestamp as u32,
-                nonce: 0,
-                sequence: sequence.sequence,
-                emitter_chain: 26,
-                emitter_address: accumulator_emitter_addr.to_bytes(),
-                payload: acc.serialize(self.slot(), ACCUMULATOR_RING_SIZE),
+            message: if !self
+                .feature_set
+                .is_active(&feature_set::zero_wormhole_message_timestamps::id())
+            {
+                MessageData {
+                    vaa_version: 1,
+                    consistency_level: 1,
+                    vaa_time: 1u32,
+                    vaa_signature_account: Pubkey::default().to_bytes(),
+                    submission_time: self.clock().unix_timestamp as u32,
+                    nonce: 0,
+                    sequence: sequence.sequence,
+                    emitter_chain: 26,
+                    emitter_address: accumulator_emitter_addr.to_bytes(),
+                    payload: acc.serialize(self.slot(), ACCUMULATOR_RING_SIZE),
+                }
+            } else {
+                // Use Default::default() to ensure zeroed VAA fields.
+                MessageData {
+                    vaa_version: 1,
+                    consistency_level: 1,
+                    submission_time: self.clock().unix_timestamp as u32,
+                    sequence: sequence.sequence,
+                    emitter_chain: 26,
+                    emitter_address: accumulator_emitter_addr.to_bytes(),
+                    payload: acc.serialize(self.slot(), ACCUMULATOR_RING_SIZE),
+                    ..Default::default()
+                }
             },
         };
 
@@ -15300,14 +15317,12 @@ pub(crate) mod tests {
             message: MessageData {
                 vaa_version: 1,
                 consistency_level: 1,
-                vaa_time: 1u32,
-                vaa_signature_account: Pubkey::default().to_bytes(),
                 submission_time: bank.clock().unix_timestamp as u32,
-                nonce: 0,
                 sequence: sequence_tracker_before_bank_advance.sequence, // sequence is incremented after the message is processed
                 emitter_chain: 26,
                 emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
                 payload: expected_wormhole_message_payload,
+                ..Default::default()
             },
         };
 
@@ -15427,14 +15442,12 @@ pub(crate) mod tests {
             message: MessageData {
                 vaa_version: 1,
                 consistency_level: 1,
-                vaa_time: 1u32,
-                vaa_signature_account: Pubkey::default().to_bytes(),
                 submission_time: bank.clock().unix_timestamp as u32,
-                nonce: 0,
                 sequence: wh_sequence_before_acc_update,
                 emitter_chain: 26,
                 emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
                 payload: expected_accumulator.serialize(bank.slot(), ACCUMULATOR_RING_SIZE),
+                ..Default::default()
             },
         };
 
@@ -15591,14 +15604,12 @@ pub(crate) mod tests {
             message: MessageData {
                 vaa_version: 1,
                 consistency_level: 1,
-                vaa_time: 1u32,
-                vaa_signature_account: Pubkey::default().to_bytes(),
                 submission_time: bank.clock().unix_timestamp as u32,
-                nonce: 0,
                 sequence: sequence_tracker_before_bank_freeze.sequence, // sequence is incremented after the message is processed
                 emitter_chain: 26,
                 emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
                 payload: expected_wormhole_message_payload,
+                ..Default::default()
             },
         };
 
@@ -15718,14 +15729,12 @@ pub(crate) mod tests {
             message: MessageData {
                 vaa_version: 1,
                 consistency_level: 1,
-                vaa_time: 1u32,
-                vaa_signature_account: Pubkey::default().to_bytes(),
                 submission_time: bank.clock().unix_timestamp as u32,
-                nonce: 0,
                 sequence: wh_sequence_before_acc_update,
                 emitter_chain: 26,
                 emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
                 payload: expected_accumulator.serialize(bank.slot(), ACCUMULATOR_RING_SIZE),
+                ..Default::default()
             },
         };
 
