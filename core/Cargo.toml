@@ -1,7 +1,7 @@
 [package]
 name = "solana-core"
 description = "Blockchain, Rebuilt for Scale"
-version = "1.13.603"
+version = "1.13.604"
 homepage = "https://solana.com/"
 documentation = "https://docs.rs/solana-core"
 readme = "../README.md"
@@ -34,31 +34,31 @@ rayon = "1.5.1"
 retain_mut = "0.1.7"
 serde = "1.0.136"
 serde_derive = "1.0.103"
-solana-address-lookup-table-program = { path = "../programs/address-lookup-table", version = "=1.13.603" }
-solana-bloom = { path = "../bloom", version = "=1.13.603" }
-solana-client = { path = "../client", version = "=1.13.603" }
-solana-entry = { path = "../entry", version = "=1.13.603" }
-solana-frozen-abi = { path = "../frozen-abi", version = "=1.13.603" }
-solana-frozen-abi-macro = { path = "../frozen-abi/macro", version = "=1.13.603" }
-solana-geyser-plugin-manager = { path = "../geyser-plugin-manager", version = "=1.13.603" }
-solana-gossip = { path = "../gossip", version = "=1.13.603" }
-solana-ledger = { path = "../ledger", version = "=1.13.603" }
-solana-measure = { path = "../measure", version = "=1.13.603" }
-solana-metrics = { path = "../metrics", version = "=1.13.603" }
-solana-net-utils = { path = "../net-utils", version = "=1.13.603" }
-solana-perf = { path = "../perf", version = "=1.13.603" }
-solana-poh = { path = "../poh", version = "=1.13.603" }
-solana-program-runtime = { path = "../program-runtime", version = "=1.13.603" }
-solana-rayon-threadlimit = { path = "../rayon-threadlimit", version = "=1.13.603" }
-solana-replica-lib = { path = "../replica-lib", version = "=1.13.603" }
-solana-rpc = { path = "../rpc", version = "=1.13.603" }
-solana-runtime = { path = "../runtime", version = "=1.13.603" }
-solana-sdk = { path = "../sdk", version = "=1.13.603" }
-solana-send-transaction-service = { path = "../send-transaction-service", version = "=1.13.603" }
-solana-streamer = { path = "../streamer", version = "=1.13.603" }
-solana-transaction-status = { path = "../transaction-status", version = "=1.13.603" }
-solana-version = { path = "../version", version = "=1.13.603" }
-solana-vote-program = { path = "../programs/vote", version = "=1.13.603" }
+solana-address-lookup-table-program = { path = "../programs/address-lookup-table", version = "=1.13.604" }
+solana-bloom = { path = "../bloom", version = "=1.13.604" }
+solana-client = { path = "../client", version = "=1.13.604" }
+solana-entry = { path = "../entry", version = "=1.13.604" }
+solana-frozen-abi = { path = "../frozen-abi", version = "=1.13.604" }
+solana-frozen-abi-macro = { path = "../frozen-abi/macro", version = "=1.13.604" }
+solana-geyser-plugin-manager = { path = "../geyser-plugin-manager", version = "=1.13.604" }
+solana-gossip = { path = "../gossip", version = "=1.13.604" }
+solana-ledger = { path = "../ledger", version = "=1.13.604" }
+solana-measure = { path = "../measure", version = "=1.13.604" }
+solana-metrics = { path = "../metrics", version = "=1.13.604" }
+solana-net-utils = { path = "../net-utils", version = "=1.13.604" }
+solana-perf = { path = "../perf", version = "=1.13.604" }
+solana-poh = { path = "../poh", version = "=1.13.604" }
+solana-program-runtime = { path = "../program-runtime", version = "=1.13.604" }
+solana-rayon-threadlimit = { path = "../rayon-threadlimit", version = "=1.13.604" }
+solana-replica-lib = { path = "../replica-lib", version = "=1.13.604" }
+solana-rpc = { path = "../rpc", version = "=1.13.604" }
+solana-runtime = { path = "../runtime", version = "=1.13.604" }
+solana-sdk = { path = "../sdk", version = "=1.13.604" }
+solana-send-transaction-service = { path = "../send-transaction-service", version = "=1.13.604" }
+solana-streamer = { path = "../streamer", version = "=1.13.604" }
+solana-transaction-status = { path = "../transaction-status", version = "=1.13.604" }
+solana-version = { path = "../version", version = "=1.13.604" }
+solana-vote-program = { path = "../programs/vote", version = "=1.13.604" }
 sys-info = "0.9.1"
 tempfile = "3.3.0"
 thiserror = "1.0"
@@ -71,9 +71,9 @@ raptorq = "1.6.5"
 reqwest = { version = "0.11.10", default-features = false, features = ["blocking", "brotli", "deflate", "gzip", "rustls-tls", "json"] }
 serde_json = "1.0.79"
 serial_test = "0.6.0"
-solana-logger = { path = "../logger", version = "=1.13.603" }
-solana-program-runtime = { path = "../program-runtime", version = "=1.13.603" }
-solana-stake-program = { path = "../programs/stake", version = "=1.13.603" }
+solana-logger = { path = "../logger", version = "=1.13.604" }
+solana-program-runtime = { path = "../program-runtime", version = "=1.13.604" }
+solana-stake-program = { path = "../programs/stake", version = "=1.13.604" }
 static_assertions = "1.1.0"
 systemstat = "0.1.10"
 

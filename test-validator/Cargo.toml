@@ -1,7 +1,7 @@
 [package]
 name = "solana-test-validator"
 description = "Blockchain, Rebuilt for Scale"
-version = "1.13.603"
+version = "1.13.604"
 homepage = "https://solana.com/"
 documentation = "https://docs.rs/solana-test-validator"
 readme = "../README.md"
@@ -15,18 +15,18 @@ base64 = "0.13.0"
 log = "0.4.14"
 serde_derive = "1.0.103"
 serde_json = "1.0.79"
-solana-cli-output = { path = "../cli-output", version = "=1.13.603" }
-solana-client = { path = "../client", version = "=1.13.603" }
-solana-core = { path = "../core", version = "=1.13.603" }
-solana-gossip = { path = "../gossip", version = "=1.13.603" }
-solana-ledger = { path = "../ledger", version = "=1.13.603" }
-solana-logger = { path = "../logger", version = "=1.13.603" }
-solana-net-utils = { path = "../net-utils", version = "=1.13.603" }
-solana-program-test = { path = "../program-test", version = "=1.13.603" }
-solana-rpc = { path = "../rpc", version = "=1.13.603" }
-solana-runtime = { path = "../runtime", version = "=1.13.603" }
-solana-sdk = { path = "../sdk", version = "=1.13.603" }
-solana-streamer = { path = "../streamer", version = "=1.13.603" }
+solana-cli-output = { path = "../cli-output", version = "=1.13.604" }
+solana-client = { path = "../client", version = "=1.13.604" }
+solana-core = { path = "../core", version = "=1.13.604" }
+solana-gossip = { path = "../gossip", version = "=1.13.604" }
+solana-ledger = { path = "../ledger", version = "=1.13.604" }
+solana-logger = { path = "../logger", version = "=1.13.604" }
+solana-net-utils = { path = "../net-utils", version = "=1.13.604" }
+solana-program-test = { path = "../program-test", version = "=1.13.604" }
+solana-rpc = { path = "../rpc", version = "=1.13.604" }
+solana-runtime = { path = "../runtime", version = "=1.13.604" }
+solana-sdk = { path = "../sdk", version = "=1.13.604" }
+solana-streamer = { path = "../streamer", version = "=1.13.604" }
 tokio = { version = "1", features = ["full"] }
 
 [package.metadata.docs.rs]
