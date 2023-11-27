@@ -548,6 +548,14 @@ pub mod enable_accumulator_sysvar {
     solana_sdk::declare_id!("BawYFA2oeA4CacxgQgLn6ZwRWDq1ZPXruUuEbko8oPT5");
 }
 
+pub mod move_accumulator_to_end_of_block {
+    solana_sdk::declare_id!("Ecz7cAP89wKDAoEJYhovFcxMcXRJiWGfFdefcSrx2Ynr");
+}
+
+pub mod zero_wormhole_message_timestamps {
+    solana_sdk::declare_id!("UMg4wFe51vKLHXpbdKWP8kFHWQBsCfbd67AoiyPSaH2");
+}
+
 lazy_static! {
     /// Map of feature identifiers to user-visible description
     pub static ref FEATURE_NAMES: HashMap<Pubkey, &'static str> = [
@@ -679,6 +687,8 @@ lazy_static! {
         (move_serialized_len_ptr_in_cpi::id(), "cpi ignore serialized_len_ptr #29592"),
         (enable_request_heap_frame_ix::id(), "Enable transaction to request heap frame using compute budget instruction #30076"),
         (enable_accumulator_sysvar::id(), "enable accumulator sysvar #<GH_ISSUE_NUMBER>"),
+        (move_accumulator_to_end_of_block::id(), "move accumulator to end of block #<GH_ISSUE_NUMBER>"),
+        (zero_wormhole_message_timestamps::id(), "use zeroed timestamps in wormhole messages"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
