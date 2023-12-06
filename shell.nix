@@ -4,20 +4,21 @@
 
 with pkgs; mkShell {
   buildInputs = [
-    clang
+    clang_14
     curl
     go
     iconv
-    llvmPackages.libclang
+    llvmPackages_14.libclang
     nettle
     openssl_1_1
     pkg-config
     protobuf
     rustup
     systemd
+    rocksdb_7_10
   ];
 
   shellHook = ''
-    export LIBCLANG_PATH="${llvmPackages.libclang.lib}/lib";
+    export LIBCLANG_PATH="${llvmPackages_14.libclang.lib}/lib";
   '';
 }
