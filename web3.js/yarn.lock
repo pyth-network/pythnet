@@ -1855,9 +1855,9 @@
   integrity sha512-rADY+HtTOA52l9VZWtgQfn4p+UDVM2eDVkMZT1I6syp0YKxW2F9v+0pbRZLsvskhQv/vMb6ZfCay81GHbz5SHg==
 
 "@types/mz@^2.7.3":
-  version "2.7.4"
-  resolved "https://registry.npmjs.org/@types/mz/-/mz-2.7.4.tgz"
-  integrity sha512-Zs0imXxyWT20j3Z2NwKpr0IO2LmLactBblNyLua5Az4UHuqOQ02V3jPTgyKwDkuc33/ahw+C3O1PIZdrhFMuQA==
+  version "2.7.8"
+  resolved "https://registry.yarnpkg.com/@types/mz/-/mz-2.7.8.tgz#5ac05b34f08e6225d7ad9b05e158b03d9ca9e2d4"
+  integrity sha512-mGLNqqwt8yu4pDw9rEphAiyWnEdok0GzOGrwi5EiTuDFxw7H3ZaEI4ASFKq4HaZtemtjQ8MkcmtWcrU4V0WkIw==
   dependencies:
     "@types/node" "*"
 
