@@ -79,15 +79,7 @@ impl Default for Version {
 
 impl fmt::Display for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{}.{}.{}{} {:?}",
-            self.major,
-            self.minor,
-            self.patch,
-            if self.commit == Some(0) { "d" } else { "" },
-            self
-        )
+        write!(f, "{}.{}.{}", self.major, self.minor, self.patch,)
     }
 }
 
@@ -95,20 +87,14 @@ impl fmt::Debug for Version {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{}.{}.{}{} (src:{}; feat:{})",
+            "{}.{}.{} (src:{}; feat:{})",
             self.major,
             self.minor,
             self.patch,
-            if self.commit == Some(0) { "d" } else { "" },
             match self.commit {
                 None => "devbuild".to_string(),
-                Some(commit) => {
-                    if commit == 0 {
-                        "dbgbuild".to_string()
-                    } else {
-                        format!("{:08x}", commit)
-                    }
-                }
+                Some(commit) if commit == 0 => "dbgbuild".to_string(),
+                Some(commit) => format!("{:08x}", commit),
             },
             self.feature_set,
         )
