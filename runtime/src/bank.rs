@@ -1414,13 +1414,16 @@ impl Bank {
         // accumulator last to make sure that the solana fully updated
         // state before the accumulator is used.  bank is in a fully
         // updated state before the accumulator is used.
-        if !bank
+        if !(bank
             .feature_set
             .is_active(&feature_set::move_accumulator_to_end_of_block::id())
+            && !bank
+                .feature_set
+                .is_active(&feature_set::revert_move_accumulator_to_end_of_block::id()))
         {
             bank.update_accumulator();
         }
-        
+
         bank
     }
 
@@ -1790,9 +1793,12 @@ impl Bank {
             // accumulator last to make sure that all fully updated state before
             // the accumulator sysvar updates.  sysvars are in a fully updated
             // state before the accumulator sysvar updates.
-            if !new
+            if !(new
                 .feature_set
                 .is_active(&feature_set::move_accumulator_to_end_of_block::id())
+                && !new
+                    .feature_set
+                    .is_active(&feature_set::revert_move_accumulator_to_end_of_block::id()))
             {
                 new.update_accumulator();
             }
@@ -2415,7 +2421,7 @@ impl Bank {
                     payload: acc.serialize(self.slot(), ACCUMULATOR_RING_SIZE),
                     ..Default::default()
                 }
-            }
+            },
         };
 
         debug!("Accumulator: Wormhole message data: {:?}", message.message);
@@ -3532,6 +3538,9 @@ impl Bank {
             if self
                 .feature_set
                 .is_active(&feature_set::move_accumulator_to_end_of_block::id())
+                && !self
+                    .feature_set
+                    .is_active(&feature_set::revert_move_accumulator_to_end_of_block::id())
             {
                 self.update_accumulator();
             } else {
@@ -3540,7 +3549,7 @@ impl Bank {
                     self.slot()
                 );
             }
-            
+
             // finish up any deferred changes to account state
             self.collect_rent_eagerly(false);
             self.collect_fees();
