@@ -556,6 +556,10 @@ pub mod zero_wormhole_message_timestamps {
     solana_sdk::declare_id!("UMg4wFe51vKLHXpbdKWP8kFHWQBsCfbd67AoiyPSaH2");
 }
 
+pub mod undo_move_accumulator_to_end_of_block {
+    solana_sdk::declare_id!("EfmMYu7ajxsKNgtWmDWKYq9Pt5EUrC3qEHAXEVBBT1bs");
+}
+
 lazy_static! {
     /// Map of feature identifiers to user-visible description
     pub static ref FEATURE_NAMES: HashMap<Pubkey, &'static str> = [
@@ -689,6 +693,7 @@ lazy_static! {
         (enable_accumulator_sysvar::id(), "enable accumulator sysvar #<GH_ISSUE_NUMBER>"),
         (move_accumulator_to_end_of_block::id(), "move accumulator to end of block #<GH_ISSUE_NUMBER>"),
         (zero_wormhole_message_timestamps::id(), "use zeroed timestamps in wormhole messages"),
+        (undo_move_accumulator_to_end_of_block::id(), "undo accumulator end of block change"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
