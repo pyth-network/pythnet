@@ -1417,10 +1417,13 @@ impl Bank {
         if !bank
             .feature_set
             .is_active(&feature_set::move_accumulator_to_end_of_block::id())
+            || bank
+                .feature_set
+                .is_active(&feature_set::undo_move_accumulator_to_end_of_block::id())
         {
             bank.update_accumulator();
         }
-        
+
         bank
     }
 
@@ -1793,6 +1796,9 @@ impl Bank {
             if !new
                 .feature_set
                 .is_active(&feature_set::move_accumulator_to_end_of_block::id())
+                || new
+                    .feature_set
+                    .is_active(&feature_set::undo_move_accumulator_to_end_of_block::id())
             {
                 new.update_accumulator();
             }
@@ -2415,7 +2421,7 @@ impl Bank {
                     payload: acc.serialize(self.slot(), ACCUMULATOR_RING_SIZE),
                     ..Default::default()
                 }
-            }
+            },
         };
 
         debug!("Accumulator: Wormhole message data: {:?}", message.message);
@@ -3532,6 +3538,9 @@ impl Bank {
             if self
                 .feature_set
                 .is_active(&feature_set::move_accumulator_to_end_of_block::id())
+                && !self
+                    .feature_set
+                    .is_active(&feature_set::undo_move_accumulator_to_end_of_block::id())
             {
                 self.update_accumulator();
             } else {
@@ -3540,7 +3549,7 @@ impl Bank {
                     self.slot()
                 );
             }
-            
+
             // finish up any deferred changes to account state
             self.collect_rent_eagerly(false);
             self.collect_fees();
