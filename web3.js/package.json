@@ -72,7 +72,7 @@
     "jayson": "^3.4.4",
     "node-fetch": "2",
     "rpc-websockets": "^7.5.0",
-    "superstruct": "^0.14.2"
+    "superstruct": "^1.0.4"
   },
   "devDependencies": {
     "@babel/core": "^7.12.13",
