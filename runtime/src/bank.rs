@@ -1410,17 +1410,24 @@ impl Bank {
         bank.update_recent_blockhashes();
         bank.fill_missing_sysvar_cache_entries();
 
+        // The features are activated one after another.
+        // The accumulator is moved to end of the block either if the
+        // move_accumulator_to_end_of_block feature is active or if all
+        // the features are active.
+        let accumulator_moved_to_end_of_block = bank
+            .feature_set
+            .is_active(&feature_set::move_accumulator_to_end_of_block::id())
+            ^ bank
+                .feature_set
+                .is_active(&feature_set::undo_move_accumulator_to_end_of_block::id())
+            ^ bank
+                .feature_set
+                .is_active(&feature_set::redo_move_accumulator_to_end_of_block::id());
         // If the accumulator is not moved to end of block, update the
         // accumulator last to make sure that the solana fully updated
         // state before the accumulator is used.  bank is in a fully
         // updated state before the accumulator is used.
-        if !bank
-            .feature_set
-            .is_active(&feature_set::move_accumulator_to_end_of_block::id())
-            || bank
-                .feature_set
-                .is_active(&feature_set::undo_move_accumulator_to_end_of_block::id())
-        {
+        if !accumulator_moved_to_end_of_block {
             bank.update_accumulator();
         }
 
@@ -1789,17 +1796,24 @@ impl Bank {
         );
 
         let (_, update_accumulator_time) = measure!({
+            // The features are activated one after another.
+            // The accumulator is moved to end of the block either if the
+            // move_accumulator_to_end_of_block feature is active or if all
+            // the features are active.
+            let accumulator_moved_to_end_of_block = new
+                .feature_set
+                .is_active(&feature_set::move_accumulator_to_end_of_block::id())
+                ^ new
+                    .feature_set
+                    .is_active(&feature_set::undo_move_accumulator_to_end_of_block::id())
+                ^ new
+                    .feature_set
+                    .is_active(&feature_set::redo_move_accumulator_to_end_of_block::id());
             // If the accumulator is not moved to end of block, update the
             // accumulator last to make sure that all fully updated state before
             // the accumulator sysvar updates.  sysvars are in a fully updated
             // state before the accumulator sysvar updates.
-            if !new
-                .feature_set
-                .is_active(&feature_set::move_accumulator_to_end_of_block::id())
-                || new
-                    .feature_set
-                    .is_active(&feature_set::undo_move_accumulator_to_end_of_block::id())
-            {
+            if !accumulator_moved_to_end_of_block {
                 new.update_accumulator();
             }
         });
@@ -3534,14 +3548,22 @@ impl Bank {
         // committed before this write lock can be obtained here.
         let mut hash = self.hash.write().unwrap();
         if *hash == Hash::default() {
-            // Update the accumulator before doing other tasks when freezing to avoid any conflicts.
-            if self
+            // The features are activated one after another.
+            // The accumulator is moved to end of the block either if the
+            // move_accumulator_to_end_of_block feature is active or if all
+            // the features are active.
+            let accumulator_moved_to_end_of_block = self
                 .feature_set
                 .is_active(&feature_set::move_accumulator_to_end_of_block::id())
-                && !self
+                ^ self
                     .feature_set
                     .is_active(&feature_set::undo_move_accumulator_to_end_of_block::id())
-            {
+                ^ self
+                    .feature_set
+                    .is_active(&feature_set::redo_move_accumulator_to_end_of_block::id());
+            // If accumulator move to end of block is active update the accumulator before doing
+            // other tasks when freezing to avoid any conflicts.
+            if accumulator_moved_to_end_of_block {
                 self.update_accumulator();
             } else {
                 info!(

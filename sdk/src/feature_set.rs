@@ -560,6 +560,10 @@ pub mod undo_move_accumulator_to_end_of_block {
     solana_sdk::declare_id!("EfmMYu7ajxsKNgtWmDWKYq9Pt5EUrC3qEHAXEVBBT1bs");
 }
 
+pub mod redo_move_accumulator_to_end_of_block {
+    solana_sdk::declare_id!("skyhwRBbP1LoHzWy1QrwLWy3vo2uHkzVV1zpN9UsGuw");
+}
+
 lazy_static! {
     /// Map of feature identifiers to user-visible description
     pub static ref FEATURE_NAMES: HashMap<Pubkey, &'static str> = [
@@ -694,6 +698,7 @@ lazy_static! {
         (move_accumulator_to_end_of_block::id(), "move accumulator to end of block #<GH_ISSUE_NUMBER>"),
         (zero_wormhole_message_timestamps::id(), "use zeroed timestamps in wormhole messages"),
         (undo_move_accumulator_to_end_of_block::id(), "undo accumulator end of block change"),
+        (redo_move_accumulator_to_end_of_block::id(), "redo accumulator end of block change"),
         /*************** ADD NEW FEATURES HERE ***************/
     ]
     .iter()
