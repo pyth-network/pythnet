@@ -199,6 +199,8 @@ mod builtin_programs;
 mod sysvar_cache;
 mod transaction_account_state_info;
 
+mod pyth_accumulator;
+
 pub const SECONDS_PER_YEAR: f64 = 365.25 * 24.0 * 60.0 * 60.0;
 
 pub const MAX_LEADER_SCHEDULE_STAKES: Epoch = 5;
@@ -2242,9 +2244,31 @@ impl Bank {
         }
 
         info!("Accumulator: Updating accumulator. Slot: {}", self.slot());
-        if let Err(e) = self.update_accumulator_impl() {
-            error!("Error updating accumulator: {:?}", e);
+
+        lazy_static! {
+            static ref ACCUMULATOR_V2_SLOT: Option<Slot> =
+                match std::env::var("PYTH_ACCUMULATOR_V2_FROM_SLOT") {
+                    Ok(value) => Some(
+                        value
+                            .parse()
+                            .expect("invalid value of PYTH_ACCUMULATOR_V2_FROM_SLOT env var")
+                    ),
+                    Err(std::env::VarError::NotPresent) => None,
+                    Err(std::env::VarError::NotUnicode(err)) => {
+                        panic!("invalid value of PYTH_ACCUMULATOR_V2_FROM_SLOT env var: {err:?}");
+                    }
+                };
         }
+
+        if ACCUMULATOR_V2_SLOT.map_or(false, |v2_slot| self.slot >= v2_slot) {
+            if let Err(e) = pyth_accumulator::update_v2(&self) {
+                error!("Error updating accumulator: {:?}", e);
+            }
+        } else {
+            if let Err(e) = self.update_accumulator_impl() {
+                error!("Error updating accumulator: {:?}", e);
+            }
+        };
     }
 
     fn update_accumulator_impl(&self) -> std::result::Result<(), AccumulatorUpdateError> {
