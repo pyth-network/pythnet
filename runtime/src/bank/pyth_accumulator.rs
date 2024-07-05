@@ -20,7 +20,7 @@ use {
 pub const ACCUMULATOR_RING_SIZE: u32 = 10_000;
 
 #[derive(Debug, thiserror::Error)]
-pub enum AccumulatorUpdateV2Error {
+pub enum AccumulatorUpdateErrorV2 {
     #[error("no oracle pubkey")]
     NoOraclePubkey,
     #[error("get_program_accounts failed to return accounts: {0}")]
@@ -282,13 +282,10 @@ fn post_accumulator_attestation(
     >,
     ring_index: u32,
 ) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
-    use {
-        pythnet_sdk::{
-            pythnet,
-            wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
-            ACCUMULATOR_EMITTER_ADDRESS,
-        },
-        solana_sdk::borsh::try_from_slice_unchecked,
+    use pythnet_sdk::{
+        pythnet,
+        wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
+        ACCUMULATOR_EMITTER_ADDRESS,
     };
 
     let accumulator_sequence_addr = env_pubkey_or(
@@ -392,14 +389,14 @@ fn post_accumulator_attestation(
     Ok(())
 }
 
-pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateV2Error> {
+pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV2> {
     // 1. Find Oracle
-    let oracle_pubkey = ORACLE_PUBKEY.ok_or(AccumulatorUpdateV2Error::NoOraclePubkey)?;
+    let oracle_pubkey = ORACLE_PUBKEY.ok_or(AccumulatorUpdateErrorV2::NoOraclePubkey)?;
 
     // 2. Find Oracle Accounts
     let accounts = bank
         .get_program_accounts(&oracle_pubkey, &ScanConfig::new(true))
-        .map_err(AccumulatorUpdateV2Error::GetProgramAccounts)?;
+        .map_err(AccumulatorUpdateErrorV2::GetProgramAccounts)?;
 
     // 3. Filter for Price Accounts
     let accounts = accounts.iter().filter(|(_, account)| true);

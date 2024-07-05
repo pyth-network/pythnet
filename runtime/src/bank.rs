@@ -158,7 +158,6 @@ use {
         ops::{Deref, RangeInclusive},
         path::PathBuf,
         rc::Rc,
-        str::FromStr,
         sync::{
             atomic::{
                 AtomicBool, AtomicI64, AtomicU64, AtomicUsize,
@@ -199,7 +198,7 @@ mod builtin_programs;
 mod sysvar_cache;
 mod transaction_account_state_info;
 
-mod pyth_accumulator;
+pub mod pyth_accumulator;
 
 pub const SECONDS_PER_YEAR: f64 = 365.25 * 24.0 * 60.0 * 60.0;
 

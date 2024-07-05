@@ -1,6 +1,7 @@
 //! The `validator` module hosts all the validator microservices.
 
 pub use solana_perf::report_target_features;
+use solana_runtime::bank::pyth_accumulator;
 use {
     crate::{
         accounts_hash_verifier::AccountsHashVerifier,
@@ -1521,15 +1522,12 @@ fn load_blockstore(
         }
     }
 
-    {
-        let bank = bank_forks.write().unwrap().working_bank();
-        for (key_name, pk_res) in bank.get_accumulator_keys() {
-            match pk_res {
-                Ok(pk) => info!("Accumulator {}: {}", key_name, pk),
-                Err(err) => {
-                    error!("Failed to get Accumulator {}: {:?}", key_name, err);
-                    std::process::abort();
-                }
+    for (key_name, pk_res) in pyth_accumulator::get_accumulator_keys() {
+        match pk_res {
+            Ok(pk) => info!("Accumulator {}: {}", key_name, pk),
+            Err(err) => {
+                error!("Failed to get Accumulator {}: {:?}", key_name, err);
+                std::process::abort();
             }
         }
     }
