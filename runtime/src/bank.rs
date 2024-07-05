@@ -205,8 +205,6 @@ pub const SECONDS_PER_YEAR: f64 = 365.25 * 24.0 * 60.0 * 60.0;
 
 pub const MAX_LEADER_SCHEDULE_STAKES: Epoch = 5;
 
-pub const ACCUMULATOR_RING_SIZE: u32 = 10_000;
-
 pub type Rewrites = RwLock<HashMap<Pubkey, Hash>>;
 
 #[derive(Default)]
@@ -442,26 +440,6 @@ pub struct LoadAndExecuteTransactionsOutput {
     pub executed_with_successful_result_count: usize,
     pub signature_count: u64,
     pub error_counters: TransactionErrorMetrics,
-}
-
-/// Accumulator specific error type. It would be nice to use `transaction::Error` but it does
-/// not include any `Custom` style variant we can leverage, so we introduce our own.
-#[derive(Debug, thiserror::Error)]
-pub enum AccumulatorUpdateError {
-    #[error("get_program_accounts failed to return accounts")]
-    GetProgramAccounts,
-
-    #[error("failed to serialize sequence account")]
-    FailedSequenceSerialization,
-
-    #[error("failed to serialize message account")]
-    FailedMessageSerialization,
-
-    #[error("io error")]
-    Io(#[from] std::io::Error),
-
-    #[error("could not parse Pubkey from environment")]
-    InvalidEnvPubkey(#[from] solana_sdk::pubkey::ParsePubkeyError),
 }
 
 #[derive(Debug, Clone)]
@@ -1430,7 +1408,7 @@ impl Bank {
         // state before the accumulator is used.  bank is in a fully
         // updated state before the accumulator is used.
         if !accumulator_moved_to_end_of_block {
-            bank.update_accumulator();
+            pyth_accumulator::update_accumulator(&bank);
         }
 
         bank
@@ -1816,7 +1794,7 @@ impl Bank {
             // the accumulator sysvar updates.  sysvars are in a fully updated
             // state before the accumulator sysvar updates.
             if !accumulator_moved_to_end_of_block {
-                new.update_accumulator();
+                pyth_accumulator::update_accumulator(&new);
             }
         });
 
@@ -2222,337 +2200,6 @@ impl Bank {
                 .map(|a| a.rent_epoch())
                 .unwrap_or(INITIAL_RENT_EPOCH),
         )
-    }
-
-    /// Updates the Accumulator Sysvar at the start of a new slot. See `update_clock` to see a similar
-    /// sysvar this is based on.
-    ///
-    /// Note:
-    /// - Library imports are placed within this function to keep the diff against upstream small.
-    /// - This update will incur a performance hit on each slot, so must be kept efficient.
-    /// - Focused on Merkle for initial release but will generalise to more accumulators in future.
-    fn update_accumulator(&self) {
-        if !self
-            .feature_set
-            .is_active(&feature_set::enable_accumulator_sysvar::id())
-        {
-            info!(
-                "Accumulator: Skipping because the feature is disabled. Slot: {}",
-                self.slot()
-            );
-            return;
-        }
-
-        info!("Accumulator: Updating accumulator. Slot: {}", self.slot());
-
-        lazy_static! {
-            static ref ACCUMULATOR_V2_SLOT: Option<Slot> =
-                match std::env::var("PYTH_ACCUMULATOR_V2_FROM_SLOT") {
-                    Ok(value) => Some(
-                        value
-                            .parse()
-                            .expect("invalid value of PYTH_ACCUMULATOR_V2_FROM_SLOT env var")
-                    ),
-                    Err(std::env::VarError::NotPresent) => None,
-                    Err(std::env::VarError::NotUnicode(err)) => {
-                        panic!("invalid value of PYTH_ACCUMULATOR_V2_FROM_SLOT env var: {err:?}");
-                    }
-                };
-        }
-
-        if ACCUMULATOR_V2_SLOT.map_or(false, |v2_slot| self.slot >= v2_slot) {
-            if let Err(e) = pyth_accumulator::update_v2(&self) {
-                error!("Error updating accumulator: {:?}", e);
-            }
-        } else {
-            if let Err(e) = self.update_accumulator_impl() {
-                error!("Error updating accumulator: {:?}", e);
-            }
-        };
-    }
-
-    fn update_accumulator_impl(&self) -> std::result::Result<(), AccumulatorUpdateError> {
-        use {
-            byteorder::ReadBytesExt,
-            pythnet_sdk::{
-                accumulators::{merkle::MerkleAccumulator, Accumulator},
-                hashers::keccak256_160::Keccak160,
-                MESSAGE_BUFFER_PID,
-            },
-            solana_sdk::borsh,
-        };
-
-        // Use the current Clock to determine the index into the accumulator ring buffer.
-        let ring_index = (self.slot() % 10_000) as u32;
-
-        // Find all accounts owned by the Message Buffer program using get_program_accounts, and
-        // extract the account data.
-        let message_buffer_pid = self.env_pubkey_or(
-            "MESSAGE_BUFFER_PID",
-            Pubkey::new_from_array(MESSAGE_BUFFER_PID),
-        )?;
-
-        let accounts = self
-            .get_program_accounts(&message_buffer_pid, &ScanConfig::new(true))
-            .map_err(|_| AccumulatorUpdateError::GetProgramAccounts)?;
-
-        let preimage = b"account:MessageBuffer";
-        let mut expected_sighash = [0u8; 8];
-        expected_sighash.copy_from_slice(&hashv(&[preimage]).to_bytes()[..8]);
-
-        // Filter accounts that don't match the Anchor sighash.
-        let accounts = accounts.iter().filter(|(_, account)| {
-            // Remove accounts that do not start with the expected Anchor sighash.
-            let mut sighash = [0u8; 8];
-            sighash.copy_from_slice(&account.data()[..8]);
-            sighash == expected_sighash
-        });
-
-        // This code, using the offsets in each Account, extracts the various data versions from
-        // the account. We deduplicate this result because the accumulator expects a set.
-        let accounts = accounts
-            .map(|(_, account)| {
-                let data = account.data();
-                let mut cursor = std::io::Cursor::new(&data);
-                let _sighash = cursor.read_u64::<LittleEndian>()?;
-                let _bump = cursor.read_u8()?;
-                let _version = cursor.read_u8()?;
-                let header_len = cursor.read_u16::<LittleEndian>()?;
-                let mut header_begin = header_len;
-                let mut inputs = Vec::new();
-                let mut cur_end_offsets_idx: usize = 0;
-                while let Some(end) = cursor.read_u16::<LittleEndian>().ok() {
-                    if end == 0 || cur_end_offsets_idx == (u8::MAX as usize) {
-                        break;
-                    }
-
-                    let end_offset = header_len + end;
-                    if end_offset as usize > data.len() {
-                        break;
-                    }
-                    let accumulator_input_data = &data[header_begin as usize..end_offset as usize];
-                    inputs.push(accumulator_input_data);
-                    header_begin = end_offset;
-                    cur_end_offsets_idx += 1;
-                }
-
-                Ok(inputs)
-            })
-            .collect::<std::result::Result<Vec<_>, std::io::Error>>()?
-            .into_iter()
-            .flatten()
-            .sorted_unstable()
-            .dedup();
-
-        // We now generate a Proof PDA (Owned by the System Program) to store the resulting Proof
-        // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
-        // for RPC users to select the correct proof for an associated VAA.
-        let (accumulator_account, _) = Pubkey::find_program_address(
-            &[b"AccumulatorState", &ring_index.to_be_bytes()],
-            &solana_sdk::system_program::id(),
-        );
-
-        let accumulator_data = {
-            let mut data = vec![];
-            let acc_state_magic = &mut b"PAS1".to_vec();
-            let accounts_data =
-                &mut borsh::BorshSerialize::try_to_vec(&accounts.clone().collect::<Vec<_>>())?;
-            data.append(acc_state_magic);
-            data.append(&mut borsh::BorshSerialize::try_to_vec(&self.slot())?);
-            data.append(&mut borsh::BorshSerialize::try_to_vec(
-                &ACCUMULATOR_RING_SIZE,
-            )?);
-            data.append(accounts_data);
-            let owner = solana_sdk::system_program::id();
-            let balance = self.get_minimum_balance_for_rent_exemption(data.len());
-            let mut account = AccountSharedData::new(balance, data.len(), &owner);
-            account.set_data(data);
-            account
-        };
-
-        // Generate a Message owned by Wormhole to be sent cross-chain. This short-circuits the
-        // Wormhole message generation code that would normally be called, but the Guardian
-        // set filters our messages so this does not pose a security risk.
-        if let Some(accumulator) = MerkleAccumulator::<Keccak160>::from_set(accounts) {
-            self.post_accumulator_attestation(accumulator, ring_index)?;
-        }
-
-        // Write the Account Set into `accumulator_state` so that the hermes application can
-        // request historical data to prove.
-        info!(
-            "Accumulator: Writing accumulator state to {:?}",
-            accumulator_account
-        );
-        self.store_account_and_update_capitalization(&accumulator_account, &accumulator_data);
-
-        Ok(())
-    }
-
-    /// TODO: Safe integer conversion checks if any are missed.
-    fn post_accumulator_attestation(
-        &self,
-        acc: pythnet_sdk::accumulators::merkle::MerkleAccumulator<
-            pythnet_sdk::hashers::keccak256_160::Keccak160,
-        >,
-        ring_index: u32,
-    ) -> std::result::Result<(), AccumulatorUpdateError> {
-        use {
-            pythnet_sdk::{
-                pythnet,
-                wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
-                ACCUMULATOR_EMITTER_ADDRESS,
-            },
-            solana_sdk::borsh::try_from_slice_unchecked,
-        };
-
-        let accumulator_sequence_addr = self.env_pubkey_or(
-            "ACCUMULATOR_SEQUENCE_ADDR",
-            Pubkey::new_from_array(pythnet::ACCUMULATOR_SEQUENCE_ADDR),
-        )?;
-
-        let accumulator_emitter_addr = self.env_pubkey_or(
-            "ACCUMULATOR_EMITTER_ADDR",
-            Pubkey::new_from_array(ACCUMULATOR_EMITTER_ADDRESS),
-        )?;
-
-        // Wormhole uses a Sequence account that is incremented each time a message is posted. As
-        // we aren't calling Wormhole we need to bump this ourselves. If it doesn't exist, we just
-        // create it instead.
-        let mut sequence: AccumulatorSequenceTracker = {
-            let data = self
-                .get_account_with_fixed_root(&accumulator_sequence_addr)
-                .unwrap_or_default();
-            let data = data.data();
-            solana_sdk::borsh::try_from_slice_unchecked(data)
-                .unwrap_or(AccumulatorSequenceTracker { sequence: 0 })
-        };
-
-        debug!("Accumulator: accumulator sequence: {:?}", sequence.sequence);
-
-        // Generate the Message to emit via Wormhole.
-        let message = PostedMessageUnreliableData {
-            message: if !self
-                .feature_set
-                .is_active(&feature_set::zero_wormhole_message_timestamps::id())
-            {
-                MessageData {
-                    vaa_version: 1,
-                    consistency_level: 1,
-                    vaa_time: 1u32,
-                    vaa_signature_account: Pubkey::default().to_bytes(),
-                    submission_time: self.clock().unix_timestamp as u32,
-                    nonce: 0,
-                    sequence: sequence.sequence,
-                    emitter_chain: 26,
-                    emitter_address: accumulator_emitter_addr.to_bytes(),
-                    payload: acc.serialize(self.slot(), ACCUMULATOR_RING_SIZE),
-                }
-            } else {
-                // Use Default::default() to ensure zeroed VAA fields.
-                MessageData {
-                    vaa_version: 1,
-                    consistency_level: 1,
-                    submission_time: self.clock().unix_timestamp as u32,
-                    sequence: sequence.sequence,
-                    emitter_chain: 26,
-                    emitter_address: accumulator_emitter_addr.to_bytes(),
-                    payload: acc.serialize(self.slot(), ACCUMULATOR_RING_SIZE),
-                    ..Default::default()
-                }
-            },
-        };
-
-        debug!("Accumulator: Wormhole message data: {:?}", message.message);
-        let wormhole_pid = self.env_pubkey_or(
-            "WORMHOLE_PID",
-            Pubkey::new_from_array(pythnet::WORMHOLE_PID),
-        )?;
-
-        // Now we can bump and write the Sequence account.
-        sequence.sequence += 1;
-        let sequence = solana_sdk::borsh::BorshSerialize::try_to_vec(&sequence)
-            .map_err(|_| AccumulatorUpdateError::FailedSequenceSerialization)?;
-        let sequence_balance = self.get_minimum_balance_for_rent_exemption(sequence.len());
-        let sequence_account = {
-            let owner = &wormhole_pid;
-            let mut account = AccountSharedData::new(sequence_balance, sequence.len(), owner);
-            account.set_data(sequence);
-            account
-        };
-
-        // Serialize into (and create if necessary) the message account.
-        let message = solana_sdk::borsh::BorshSerialize::try_to_vec(&message)
-            .map_err(|_| AccumulatorUpdateError::FailedMessageSerialization)?;
-        let message_balance = self.get_minimum_balance_for_rent_exemption(message.len());
-        let message_account = {
-            let owner = &wormhole_pid;
-            let mut account = AccountSharedData::new(message_balance, message.len(), owner);
-            account.set_data(message);
-            account
-        };
-
-        // The message_pda derivation includes the ring buffer index to simulate a ring buffer in order
-        // for RPC users to select the message for an associated VAA.
-        let (message_pda, _) = Pubkey::find_program_address(
-            &[b"AccumulatorMessage", &ring_index.to_be_bytes()],
-            &wormhole_pid,
-        );
-
-        self.store_account_and_update_capitalization(&accumulator_sequence_addr, &sequence_account);
-
-        info!("Accumulator: Writing wormhole message to {:?}", message_pda);
-        self.store_account_and_update_capitalization(&message_pda, &message_account);
-
-        Ok(())
-    }
-
-    /// Read the pubkey from the environment variable `var` or return `default`
-    /// if the variable is not set.
-    fn env_pubkey_or(
-        &self,
-        var: &str,
-        default: Pubkey,
-    ) -> std::result::Result<Pubkey, AccumulatorUpdateError> {
-        Ok(std::env::var(var)
-            .as_deref()
-            .map(Pubkey::from_str)
-            .ok()
-            .transpose()?
-            .unwrap_or(default))
-    }
-
-    /// Get all accumulator related pubkeys from environment variables
-    /// or return default if the variable is not set.
-    pub fn get_accumulator_keys(
-        &self,
-    ) -> Vec<(&str, std::result::Result<Pubkey, AccumulatorUpdateError>)> {
-        use pythnet_sdk::{pythnet, ACCUMULATOR_EMITTER_ADDRESS, MESSAGE_BUFFER_PID};
-        let accumulator_keys = vec![
-            (
-                "MESSAGE_BUFFER_PID",
-                Pubkey::new_from_array(MESSAGE_BUFFER_PID),
-            ),
-            // accumulator emitter address should always be the same regardless
-            // of environment but checking here for completeness
-            (
-                "ACCUMULATOR_EMITTER_ADDR",
-                Pubkey::new_from_array(ACCUMULATOR_EMITTER_ADDRESS),
-            ),
-            (
-                "ACCUMULATOR_SEQUENCE_ADDR",
-                Pubkey::new_from_array(pythnet::ACCUMULATOR_SEQUENCE_ADDR),
-            ),
-            (
-                "WORMHOLE_PID",
-                Pubkey::new_from_array(pythnet::WORMHOLE_PID),
-            ),
-        ];
-        let accumulator_pubkeys: Vec<(&str, std::result::Result<Pubkey, AccumulatorUpdateError>)> =
-            accumulator_keys
-                .iter()
-                .map(|(k, d)| (*k, self.env_pubkey_or(k, *d)))
-                .collect();
-        accumulator_pubkeys
     }
 
     pub fn clock(&self) -> sysvar::clock::Clock {
@@ -3588,7 +3235,7 @@ impl Bank {
             // If accumulator move to end of block is active update the accumulator before doing
             // other tasks when freezing to avoid any conflicts.
             if accumulator_moved_to_end_of_block {
-                self.update_accumulator();
+                pyth_accumulator::update_accumulator(self);
             } else {
                 info!(
                     "Accumulator: Skipping accumulating end of block because the feature is disabled. Slot: {}",
