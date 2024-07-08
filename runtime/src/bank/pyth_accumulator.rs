@@ -131,9 +131,9 @@ pub fn get_accumulator_keys() -> Vec<(
     accumulator_pubkeys
 }
 
-pub fn update_v1(
+pub fn update_v1<'a>(
     bank: &Bank,
-    v2_messages: Vec<&[u8]>,
+    v2_messages: Vec<&'a [u8]>,
     use_message_buffers: bool,
 ) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
     use {
@@ -214,8 +214,8 @@ pub fn update_v1(
         Vec::new()
     };
 
-    let mut messages = v1_messages;
-    messages.extend(v2_messages);
+    let mut messages = v2_messages;
+    messages.extend(v1_messages);
 
     // We now generate a Proof PDA (Owned by the System Program) to store the resulting Proof
     // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
@@ -384,7 +384,8 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
         .get_program_accounts(&oracle_pubkey, &ScanConfig::new(true))
         .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
 
-    let mut any_legacy_mode = false;
+    let mut any_v1_aggregations = false;
+    let mut v2_messages = Vec::new();
 
     // 3. Call Aggregation on Price Accounts.
     for (pubkey, mut account) in accounts {
@@ -394,26 +395,31 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
         match pyth_oracle::validator::aggregate_price(
             bank.slot(),
             bank.clock().unix_timestamp,
+            &pubkey.to_bytes().into(),
             &mut price_account_data,
         ) {
-            Ok(()) => {
-                account.set_data(price_account_data);
-                bank.store_account_and_update_capitalization(&pubkey, &account);
+            Ok(outcome) => {
+                if outcome.commit {
+                    account.set_data(price_account_data);
+                    bank.store_account_and_update_capitalization(&pubkey, &account);
+                }
+                v2_messages.extend(outcome.messages);
             }
             Err(err) => match err {
                 AggregationError::NotPriceFeedAccount => {}
-                AggregationError::LegacyAggregationMode => {
-                    any_legacy_mode = true;
-                }
-                AggregationError::NotTradingStatus => {
-                    trace!("Aggregation: failed to update_price_cumulative, {:?}", err);
+                AggregationError::V1AggregationMode => {
+                    any_v1_aggregations = true;
                 }
             },
         }
     }
 
     // TODO: make new messages
-    update_v1(bank, Vec::new(), any_legacy_mode)?;
+    update_v1(
+        bank,
+        v2_messages.iter().map(|x| &**x).collect(),
+        any_v1_aggregations,
+    )?;
 
     // 5. Merkleize the results.
 
