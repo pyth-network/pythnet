@@ -97,6 +97,7 @@ pub fn update_accumulator(bank: &Bank) {
             };
     }
 
+    // TODO: No longer a slot or feature flag, based on price account flag.
     if (*ACCUMULATOR_V2_SLOT).map_or(false, |v2_slot| bank.slot() >= v2_slot) {
         if let Err(e) = update_v2(bank) {
             error!("Error updating accumulator: {:?}", e);
@@ -398,14 +399,28 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
         .get_program_accounts(&oracle_pubkey, &ScanConfig::new(true))
         .map_err(AccumulatorUpdateErrorV2::GetProgramAccounts)?;
 
-    // 3. Filter for Price Accounts
-    let accounts = accounts.iter().filter(|(_, account)| true);
+    // 3. Call Aggregation on Price Accounts.
+    for (pubkey, mut account) in accounts {
+        let mut price_account_data = account.data().to_owned();
 
-    // 4. Pass the PriceAccounts to the Oracle Code
-    //    - Change Oracle to not run update code.
-    //    - Change Oracle to have the aggregation code itself as a pure function.
-    //    - Call aggregation with PriceAccount as input.
+        // Perform Accumulation
+        match pyth_oracle::validator::aggregate_price(
+            bank.slot(),
+            bank.clock().unix_timestamp,
+            &mut price_account_data,
+        ) {
+            Ok(success) => {
+                if success {
+                    account.set_data(price_account_data);
+                    bank.store_account_and_update_capitalization(&pubkey, &account);
+                }
+            }
+            Err(err) => trace!("Aggregation: failed to update_price_cumulative, {:?}", err),
+        }
+    }
+
     // 5. Merkleize the results.
+
     // 6. Create Wormhole Message Account
 
     Ok(())

@@ -3565,6 +3565,7 @@ dependencies = [
  "num-traits",
  "pythnet-sdk 1.13.6 (git+https://github.com/pyth-network/pyth-crosschain?rev=60144002053a93f424be70decd8a8ccb8d618d81)",
  "solana-program 1.14.17",
+ "solana-sdk 1.14.17",
  "thiserror",
 ]
 
