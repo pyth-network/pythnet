@@ -4,9 +4,9 @@ use {
     byteorder::LittleEndian,
     itertools::Itertools,
     log::*,
+    pyth_oracle::validator::AggregationError,
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount},
-        clock::Slot,
         feature_set,
         hash::hashv,
         pubkey::Pubkey,
@@ -18,14 +18,6 @@ use {
 };
 
 pub const ACCUMULATOR_RING_SIZE: u32 = 10_000;
-
-#[derive(Debug, thiserror::Error)]
-pub enum AccumulatorUpdateErrorV2 {
-    #[error("no oracle pubkey")]
-    NoOraclePubkey,
-    #[error("get_program_accounts failed to return accounts: {0}")]
-    GetProgramAccounts(#[from] ScanError),
-}
 
 lazy_static! {
     static ref ORACLE_PUBKEY: Option<Pubkey> = match env::var("PYTH_ORACLE_PUBKEY") {
@@ -45,8 +37,8 @@ lazy_static! {
 /// not include any `Custom` style variant we can leverage, so we introduce our own.
 #[derive(Debug, thiserror::Error)]
 pub enum AccumulatorUpdateErrorV1 {
-    #[error("get_program_accounts failed to return accounts")]
-    GetProgramAccounts,
+    #[error("get_program_accounts failed to return accounts: {0}")]
+    GetProgramAccounts(#[from] ScanError),
 
     #[error("failed to serialize sequence account")]
     FailedSequenceSerialization,
@@ -59,6 +51,9 @@ pub enum AccumulatorUpdateErrorV1 {
 
     #[error("could not parse Pubkey from environment")]
     InvalidEnvPubkey(#[from] solana_sdk::pubkey::ParsePubkeyError),
+
+    #[error("no oracle pubkey")]
+    NoOraclePubkey,
 }
 
 /// Updates the Accumulator Sysvar at the start of a new slot. See `update_clock` to see a similar
@@ -82,31 +77,9 @@ pub fn update_accumulator(bank: &Bank) {
 
     info!("Accumulator: Updating accumulator. Slot: {}", bank.slot());
 
-    lazy_static! {
-        static ref ACCUMULATOR_V2_SLOT: Option<Slot> =
-            match std::env::var("PYTH_ACCUMULATOR_V2_FROM_SLOT") {
-                Ok(value) => Some(
-                    value
-                        .parse()
-                        .expect("invalid value of PYTH_ACCUMULATOR_V2_FROM_SLOT env var")
-                ),
-                Err(std::env::VarError::NotPresent) => None,
-                Err(std::env::VarError::NotUnicode(err)) => {
-                    panic!("invalid value of PYTH_ACCUMULATOR_V2_FROM_SLOT env var: {err:?}");
-                }
-            };
+    if let Err(e) = update_v2(bank) {
+        error!("Error updating accumulator v2: {:?}", e);
     }
-
-    // TODO: No longer a slot or feature flag, based on price account flag.
-    if (*ACCUMULATOR_V2_SLOT).map_or(false, |v2_slot| bank.slot() >= v2_slot) {
-        if let Err(e) = update_v2(bank) {
-            error!("Error updating accumulator: {:?}", e);
-        }
-    } else {
-        if let Err(e) = update_v1(bank) {
-            error!("Error updating accumulator: {:?}", e);
-        }
-    };
 }
 
 /// Read the pubkey from the environment variable `var` or return `default`
@@ -158,7 +131,11 @@ pub fn get_accumulator_keys() -> Vec<(
     accumulator_pubkeys
 }
 
-pub fn update_v1(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
+pub fn update_v1(
+    bank: &Bank,
+    v2_messages: Vec<&[u8]>,
+    use_message_buffers: bool,
+) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
     use {
         byteorder::ReadBytesExt,
         pythnet_sdk::{
@@ -179,57 +156,66 @@ pub fn update_v1(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
         Pubkey::new_from_array(MESSAGE_BUFFER_PID),
     )?;
 
-    let accounts = bank
-        .get_program_accounts(&message_buffer_pid, &ScanConfig::new(true))
-        .map_err(|_| AccumulatorUpdateErrorV1::GetProgramAccounts)?;
+    let message_buffer_accounts;
+    let v1_messages = if use_message_buffers {
+        message_buffer_accounts = bank
+            .get_program_accounts(&message_buffer_pid, &ScanConfig::new(true))
+            .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
 
-    let preimage = b"account:MessageBuffer";
-    let mut expected_sighash = [0u8; 8];
-    expected_sighash.copy_from_slice(&hashv(&[preimage]).to_bytes()[..8]);
+        let preimage = b"account:MessageBuffer";
+        let mut expected_sighash = [0u8; 8];
+        expected_sighash.copy_from_slice(&hashv(&[preimage]).to_bytes()[..8]);
 
-    // Filter accounts that don't match the Anchor sighash.
-    let accounts = accounts.iter().filter(|(_, account)| {
-        // Remove accounts that do not start with the expected Anchor sighash.
-        let mut sighash = [0u8; 8];
-        sighash.copy_from_slice(&account.data()[..8]);
-        sighash == expected_sighash
-    });
+        // Filter accounts that don't match the Anchor sighash.
+        let message_buffer_accounts = message_buffer_accounts.iter().filter(|(_, account)| {
+            // Remove accounts that do not start with the expected Anchor sighash.
+            let mut sighash = [0u8; 8];
+            sighash.copy_from_slice(&account.data()[..8]);
+            sighash == expected_sighash
+        });
 
-    // This code, using the offsets in each Account, extracts the various data versions from
-    // the account. We deduplicate this result because the accumulator expects a set.
-    let accounts = accounts
-        .map(|(_, account)| {
-            let data = account.data();
-            let mut cursor = std::io::Cursor::new(&data);
-            let _sighash = cursor.read_u64::<LittleEndian>()?;
-            let _bump = cursor.read_u8()?;
-            let _version = cursor.read_u8()?;
-            let header_len = cursor.read_u16::<LittleEndian>()?;
-            let mut header_begin = header_len;
-            let mut inputs = Vec::new();
-            let mut cur_end_offsets_idx: usize = 0;
-            while let Some(end) = cursor.read_u16::<LittleEndian>().ok() {
-                if end == 0 || cur_end_offsets_idx == (u8::MAX as usize) {
-                    break;
+        // This code, using the offsets in each Account, extracts the various data versions from
+        // the account. We deduplicate this result because the accumulator expects a set.
+        message_buffer_accounts
+            .map(|(_, account)| {
+                let data = account.data();
+                let mut cursor = std::io::Cursor::new(&data);
+                let _sighash = cursor.read_u64::<LittleEndian>()?;
+                let _bump = cursor.read_u8()?;
+                let _version = cursor.read_u8()?;
+                let header_len = cursor.read_u16::<LittleEndian>()?;
+                let mut header_begin = header_len;
+                let mut inputs = Vec::new();
+                let mut cur_end_offsets_idx: usize = 0;
+                while let Some(end) = cursor.read_u16::<LittleEndian>().ok() {
+                    if end == 0 || cur_end_offsets_idx == (u8::MAX as usize) {
+                        break;
+                    }
+
+                    let end_offset = header_len + end;
+                    if end_offset as usize > data.len() {
+                        break;
+                    }
+                    let accumulator_input_data = &data[header_begin as usize..end_offset as usize];
+                    inputs.push(accumulator_input_data);
+                    header_begin = end_offset;
+                    cur_end_offsets_idx += 1;
                 }
 
-                let end_offset = header_len + end;
-                if end_offset as usize > data.len() {
-                    break;
-                }
-                let accumulator_input_data = &data[header_begin as usize..end_offset as usize];
-                inputs.push(accumulator_input_data);
-                header_begin = end_offset;
-                cur_end_offsets_idx += 1;
-            }
+                Ok(inputs)
+            })
+            .collect::<std::result::Result<Vec<_>, std::io::Error>>()?
+            .into_iter()
+            .flatten()
+            .sorted_unstable()
+            .dedup()
+            .collect()
+    } else {
+        Vec::new()
+    };
 
-            Ok(inputs)
-        })
-        .collect::<std::result::Result<Vec<_>, std::io::Error>>()?
-        .into_iter()
-        .flatten()
-        .sorted_unstable()
-        .dedup();
+    let mut messages = v1_messages;
+    messages.extend(v2_messages);
 
     // We now generate a Proof PDA (Owned by the System Program) to store the resulting Proof
     // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
@@ -242,8 +228,7 @@ pub fn update_v1(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
     let accumulator_data = {
         let mut data = vec![];
         let acc_state_magic = &mut b"PAS1".to_vec();
-        let accounts_data =
-            &mut borsh::BorshSerialize::try_to_vec(&accounts.clone().collect::<Vec<_>>())?;
+        let accounts_data = &mut borsh::BorshSerialize::try_to_vec(&messages)?;
         data.append(acc_state_magic);
         data.append(&mut borsh::BorshSerialize::try_to_vec(&bank.slot())?);
         data.append(&mut borsh::BorshSerialize::try_to_vec(
@@ -260,7 +245,7 @@ pub fn update_v1(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
     // Generate a Message owned by Wormhole to be sent cross-chain. This short-circuits the
     // Wormhole message generation code that would normally be called, but the Guardian
     // set filters our messages so this does not pose a security risk.
-    if let Some(accumulator) = MerkleAccumulator::<Keccak160>::from_set(accounts) {
+    if let Some(accumulator) = MerkleAccumulator::<Keccak160>::from_set(messages.into_iter()) {
         post_accumulator_attestation(bank, accumulator, ring_index)?;
     }
 
@@ -390,14 +375,16 @@ fn post_accumulator_attestation(
     Ok(())
 }
 
-pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV2> {
+pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
     // 1. Find Oracle
-    let oracle_pubkey = ORACLE_PUBKEY.ok_or(AccumulatorUpdateErrorV2::NoOraclePubkey)?;
+    let oracle_pubkey = ORACLE_PUBKEY.ok_or(AccumulatorUpdateErrorV1::NoOraclePubkey)?;
 
     // 2. Find Oracle Accounts
     let accounts = bank
         .get_program_accounts(&oracle_pubkey, &ScanConfig::new(true))
-        .map_err(AccumulatorUpdateErrorV2::GetProgramAccounts)?;
+        .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
+
+    let mut any_legacy_mode = false;
 
     // 3. Call Aggregation on Price Accounts.
     for (pubkey, mut account) in accounts {
@@ -409,15 +396,24 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
             bank.clock().unix_timestamp,
             &mut price_account_data,
         ) {
-            Ok(success) => {
-                if success {
-                    account.set_data(price_account_data);
-                    bank.store_account_and_update_capitalization(&pubkey, &account);
-                }
+            Ok(()) => {
+                account.set_data(price_account_data);
+                bank.store_account_and_update_capitalization(&pubkey, &account);
             }
-            Err(err) => trace!("Aggregation: failed to update_price_cumulative, {:?}", err),
+            Err(err) => match err {
+                AggregationError::NotPriceFeedAccount => {}
+                AggregationError::LegacyAggregationMode => {
+                    any_legacy_mode = true;
+                }
+                AggregationError::NotTradingStatus => {
+                    trace!("Aggregation: failed to update_price_cumulative, {:?}", err);
+                }
+            },
         }
     }
+
+    // TODO: make new messages
+    update_v1(bank, Vec::new(), any_legacy_mode)?;
 
     // 5. Merkleize the results.
 
