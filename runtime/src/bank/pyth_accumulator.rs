@@ -133,7 +133,7 @@ pub fn get_accumulator_keys() -> Vec<(
 
 pub fn update_v1<'a>(
     bank: &Bank,
-    v2_messages: Vec<&'a [u8]>,
+    v2_messages: &[Vec<u8>],
     use_message_buffers: bool,
 ) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
     use {
@@ -214,8 +214,8 @@ pub fn update_v1<'a>(
         Vec::new()
     };
 
-    let mut messages = v2_messages;
-    messages.extend(v1_messages);
+    let mut messages = v1_messages;
+    messages.extend(v2_messages.iter().map(|x| &**x));
 
     // We now generate a Proof PDA (Owned by the System Program) to store the resulting Proof
     // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
@@ -376,10 +376,8 @@ fn post_accumulator_attestation(
 }
 
 pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
-    // 1. Find Oracle
     let oracle_pubkey = ORACLE_PUBKEY.ok_or(AccumulatorUpdateErrorV1::NoOraclePubkey)?;
 
-    // 2. Find Oracle Accounts
     let accounts = bank
         .get_program_accounts(&oracle_pubkey, &ScanConfig::new(true))
         .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
@@ -387,7 +385,6 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
     let mut any_v1_aggregations = false;
     let mut v2_messages = Vec::new();
 
-    // 3. Call Aggregation on Price Accounts.
     for (pubkey, mut account) in accounts {
         let mut price_account_data = account.data().to_owned();
 
@@ -414,16 +411,5 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
         }
     }
 
-    // TODO: make new messages
-    update_v1(
-        bank,
-        v2_messages.iter().map(|x| &**x).collect(),
-        any_v1_aggregations,
-    )?;
-
-    // 5. Merkleize the results.
-
-    // 6. Create Wormhole Message Account
-
-    Ok(())
+    update_v1(bank, &v2_messages, any_v1_aggregations)
 }
