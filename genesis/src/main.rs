@@ -565,7 +565,7 @@ fn main() -> Result<(), Box<dyn error::Error>> {
     }
 
     solana_stake_program::add_genesis_accounts(&mut genesis_config);
-    if genesis_config.cluster_type == ClusterType::Development {
+    if genesis_config.cluster_type == ClusterType::MainnetBeta {
         solana_runtime::genesis_utils::activate_pythnet_genesis_features(&mut genesis_config);
     }
 
