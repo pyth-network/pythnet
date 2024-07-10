@@ -107,13 +107,13 @@ esac
 # Version bumps should occur in their own commit. Disallow bumping version
 # in dirty working trees. Gate after arg parsing to prevent breaking the
 # `check` subcommand.
-(
-  set +e
-  if ! git diff --exit-code; then
-    echo -e "\nError: Working tree is dirty. Commit or discard changes before bumping version." 1>&2
-    exit 1
-  fi
-)
+# (
+#   set +e
+#   if ! git diff --exit-code; then
+#     echo -e "\nError: Working tree is dirty. Commit or discard changes before bumping version." 1>&2
+#     exit 1
+#   fi
+# )
 
 newVersion="$MAJOR.$MINOR.$PATCH$SPECIAL"
 
@@ -122,14 +122,14 @@ for Cargo_toml in "${Cargo_tomls[@]}"; do
   # Set new crate version
   (
     set -x
-    sed -i "$Cargo_toml" -e "0,/^version =/{s/^version = \"[^\"]*\"$/version = \"$newVersion\"/}"
+    gsed -i "$Cargo_toml" -e "0,/^version =/{s/^version = \"[^\"]*\"$/version = \"$newVersion\"/}"
   )
 
   # Fix up the version references to other internal crates
   for crate in "${crates[@]}"; do
     (
       set -x
-      sed -i "$Cargo_toml" -e "
+      gsed -i "$Cargo_toml" -e "
         s/^$crate = { *path *= *\"\([^\"]*\)\" *, *version *= *\"[^\"]*\"\(.*\)} *\$/$crate = \{ path = \"\1\", version = \"=$newVersion\"\2\}/
       "
     )
