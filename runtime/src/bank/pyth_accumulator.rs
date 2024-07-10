@@ -404,7 +404,7 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
             }
             Err(err) => match err {
                 AggregationError::NotPriceFeedAccount => {}
-                AggregationError::V1AggregationMode => {
+                AggregationError::V1AggregationMode | AggregationError::AlreadyAggregated => {
                     any_v1_aggregations = true;
                 }
             },
