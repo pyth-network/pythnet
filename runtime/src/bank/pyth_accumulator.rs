@@ -20,13 +20,14 @@ use {
 pub const ACCUMULATOR_RING_SIZE: u32 = 10_000;
 
 lazy_static! {
-    static ref ORACLE_PUBKEY: Option<Pubkey> = match env::var("PYTH_ORACLE_PUBKEY") {
-        Ok(value) => Some(
-            value
-                .parse()
-                .expect("invalid value of PYTH_ORACLE_PUBKEY env var")
-        ),
-        Err(VarError::NotPresent) => None,
+    pub static ref ORACLE_PUBKEY: Pubkey = match env::var("PYTH_ORACLE_PUBKEY") {
+        Ok(value) => value
+            .parse()
+            .expect("invalid value of PYTH_ORACLE_PUBKEY env var"),
+        Err(VarError::NotPresent) => {
+            // Pythnet oracle program address
+            "FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH".parse().unwrap()
+        }
         Err(VarError::NotUnicode(err)) => {
             panic!("invalid value of PYTH_ORACLE_PUBKEY env var: {err:?}");
         }
@@ -51,9 +52,6 @@ pub enum AccumulatorUpdateErrorV1 {
 
     #[error("could not parse Pubkey from environment")]
     InvalidEnvPubkey(#[from] solana_sdk::pubkey::ParsePubkeyError),
-
-    #[error("no oracle pubkey")]
-    NoOraclePubkey,
 }
 
 /// Updates the Accumulator Sysvar at the start of a new slot. See `update_clock` to see a similar
@@ -376,10 +374,8 @@ fn post_accumulator_attestation(
 }
 
 pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
-    let oracle_pubkey = ORACLE_PUBKEY.ok_or(AccumulatorUpdateErrorV1::NoOraclePubkey)?;
-
     let accounts = bank
-        .get_program_accounts(&oracle_pubkey, &ScanConfig::new(true))
+        .get_program_accounts(&ORACLE_PUBKEY, &ScanConfig::new(true))
         .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
 
     let mut any_v1_aggregations = false;
@@ -395,12 +391,10 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
             &pubkey.to_bytes().into(),
             &mut price_account_data,
         ) {
-            Ok(outcome) => {
-                if outcome.commit {
-                    account.set_data(price_account_data);
-                    bank.store_account_and_update_capitalization(&pubkey, &account);
-                }
-                v2_messages.extend(outcome.messages);
+            Ok(messages) => {
+                account.set_data(price_account_data);
+                bank.store_account_and_update_capitalization(&pubkey, &account);
+                v2_messages.extend(messages);
             }
             Err(err) => match err {
                 AggregationError::NotPriceFeedAccount => {}
