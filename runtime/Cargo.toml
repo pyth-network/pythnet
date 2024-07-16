@@ -35,7 +35,7 @@ num-traits = { version = "0.2" }
 num_cpus = "1.13.1"
 once_cell = "1.12.0"
 ouroboros = "0.15.0"
-pyth-oracle = { git = "https://github.com/pyth-network/pyth-client", branch = "accumulator-v2", features = ["library"] }
+pyth-oracle = { path = "/code/pyth-network/pyth-client/program/rust", features = ["library"] }
 pythnet-sdk = { git = "https://github.com/pyth-network/pyth-crosschain", version = "1.13.6", rev = "e670f57f89b05398ca352e4accb1e32724a8e1b4" }
 rand = "0.7.0"
 rayon = "1.5.3"

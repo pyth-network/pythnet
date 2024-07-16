@@ -8,7 +8,8 @@ use crate::{
 use byteorder::ByteOrder;
 use byteorder::{LittleEndian, ReadBytesExt};
 use itertools::Itertools;
-use pyth_oracle::solana_program::account_info::AccountInfo;
+use pyth_oracle::PythOracleSerialize;
+use pyth_oracle::{solana_program::account_info::AccountInfo, PriceAccountFlags};
 use pyth_oracle::{PriceAccount, PythAccount};
 use pythnet_sdk::{
     accumulators::{merkle::MerkleAccumulator, Accumulator},
@@ -131,7 +132,7 @@ fn test_update_accumulator_sysvar() {
     let (price_feed_key, _bump) = Pubkey::find_program_address(&[b"123"], &ORACLE_PUBKEY);
     let mut price_feed_account =
         AccountSharedData::new(42, size_of::<PriceAccount>(), &ORACLE_PUBKEY);
-    PriceAccount::initialize(
+    let _ = PriceAccount::initialize(
         &AccountInfo::new(
             &price_feed_key.to_bytes().into(),
             false,
@@ -669,6 +670,202 @@ fn test_update_accumulator_end_of_block() {
     );
 }
 
+// This test will
+#[test]
+fn test_accumulator_v2() {
+    let leader_pubkey = solana_sdk::pubkey::new_rand();
+    let GenesisConfigInfo {
+        mut genesis_config, ..
+    } = create_genesis_config_with_leader(5, &leader_pubkey, 3);
+
+    // Set epoch length to 32 so we can advance epochs quickly. We also skip past slot 0 here
+    // due to slot 0 having special handling.
+    let slots_in_epoch = 32;
+    genesis_config.epoch_schedule = EpochSchedule::new(slots_in_epoch);
+    let mut bank = Bank::new_for_tests(&genesis_config);
+
+    bank = new_from_parent(&Arc::new(bank)); // Advance slot 1.
+    bank = new_from_parent(&Arc::new(bank)); // Advance slot 2.
+
+    let generate_price = |seeds, generate_buffers: bool| {
+        let (price_feed_key, _bump) = Pubkey::find_program_address(&[seeds], &ORACLE_PUBKEY);
+        let mut price_feed_account =
+            AccountSharedData::new(42, size_of::<PriceAccount>(), &ORACLE_PUBKEY);
+
+        let messages = {
+            let price_feed_info_key = &price_feed_key.to_bytes().into();
+            let price_feed_info_lamports = &mut 0;
+            let price_feed_info_owner = &ORACLE_PUBKEY.to_bytes().into();
+            let price_feed_info_data = price_feed_account.data_mut();
+            let price_feed_info = AccountInfo::new(
+                price_feed_info_key,
+                false,
+                true,
+                price_feed_info_lamports,
+                price_feed_info_data,
+                price_feed_info_owner,
+                false,
+                Epoch::default(),
+            );
+
+            let mut price_account = PriceAccount::initialize(&price_feed_info, 0).unwrap();
+            if !generate_buffers {
+                price_account.flags.insert(
+                    PriceAccountFlags::ACCUMULATOR_V2 | PriceAccountFlags::MESSAGE_BUFFER_CLEARED,
+                );
+            }
+
+            vec![
+                price_account
+                    .as_price_feed_message(&price_feed_key.to_bytes().into())
+                    .to_bytes(),
+                price_account
+                    .as_twap_message(&price_feed_key.to_bytes().into())
+                    .to_bytes(),
+            ]
+        };
+
+        bank.store_account(&price_feed_key, &price_feed_account);
+
+        if generate_buffers {
+            // Insert into message buffer in reverse order to test that accumulator
+            // sorts first.
+            let message_buffer_bytes = create_message_buffer_bytes(messages.clone());
+
+            // Create a Message account.
+            let price_message_key = keypair_from_seed(&[1u8; 32]).unwrap();
+            let mut price_message_account = bank
+                .get_account(&price_message_key.pubkey())
+                .unwrap_or_default();
+
+            price_message_account.set_lamports(1_000_000_000);
+            price_message_account
+                .set_owner(Pubkey::new_from_array(pythnet_sdk::MESSAGE_BUFFER_PID));
+            price_message_account.set_data(message_buffer_bytes);
+
+            // Store Message account so the accumulator sysvar updater can find it.
+            bank.store_account(&price_message_key.pubkey(), &price_message_account);
+        }
+
+        (price_feed_key, messages)
+    };
+
+    // TODO: New test functionality here.
+    // 1. Create Price Feed Accounts owned by ORACLE_PUBKEY
+    // 2. Populate Price Feed Accounts
+    // 3. Call update_v2()
+    //    - Cases:
+    //      - No V1 Messages, Only Price Accounts with no V2
+    //      - No V1 Messages, Some Price Accounts with no V2
+    //      - Some V1 Messages, No Price Accounts with no V2
+    //      - Some V1 Messages, Some Price Accounts with no V2
+    //      - Simulate PriceUpdate that WOULD trigger a real V1 aggregate before End of Slot
+    //      - Simulate PriceUpdate that doesn't trigger a real V1 aggregate, only V2.
+
+    assert!(bank
+        .feature_set
+        .is_active(&feature_set::enable_accumulator_sysvar::id()));
+    assert!(bank
+        .feature_set
+        .is_active(&feature_set::move_accumulator_to_end_of_block::id()));
+    assert!(bank
+        .feature_set
+        .is_active(&feature_set::undo_move_accumulator_to_end_of_block::id()));
+    assert!(bank
+        .feature_set
+        .is_active(&feature_set::redo_move_accumulator_to_end_of_block::id()));
+
+    let prices_with_messages = [
+        generate_price(b"seeds_1", false),
+        generate_price(b"seeds_2", false),
+        generate_price(b"seeds_3", false),
+        generate_price(b"seeds_4", false),
+    ];
+
+    let messages = prices_with_messages
+        .iter()
+        .map(|(_, messages)| messages)
+        .flatten()
+        .map(|message| &message[..]);
+
+    // Trigger Aggregation. We freeze instead of new_from_parent so
+    // we can keep access to the bank.
+    let sequence_tracker_before_bank_freeze = get_acc_sequence_tracker(&bank);
+    bank.freeze();
+
+    // Get the wormhole message generated by freezed. We don't need
+    // to offset the ring index as our test is always below 10K slots.
+    let wormhole_message_account = get_wormhole_message_account(&bank, bank.slot() as u32);
+    assert_ne!(wormhole_message_account.data().len(), 0);
+    PostedMessageUnreliableData::deserialize(&mut wormhole_message_account.data()).unwrap();
+
+    // Create MerkleAccumulator by hand to verify that the Wormhole message
+    // contents are correctg.
+    let expected_accumulator =
+        MerkleAccumulator::<Keccak160>::from_set(messages.clone().sorted_unstable().dedup())
+            .unwrap();
+
+    let expected_wormhole_message_payload =
+        expected_accumulator.serialize(bank.slot(), ACCUMULATOR_RING_SIZE);
+
+    let expected_wormhole_message = PostedMessageUnreliableData {
+        message: MessageData {
+            vaa_version: 1,
+            consistency_level: 1,
+            submission_time: bank.clock().unix_timestamp as u32,
+            sequence: sequence_tracker_before_bank_freeze.sequence, // sequence is incremented after the message is processed
+            emitter_chain: 26,
+            emitter_address: ACCUMULATOR_EMITTER_ADDRESS,
+            payload: expected_wormhole_message_payload,
+            ..Default::default()
+        },
+    };
+
+    assert_eq!(
+        wormhole_message_account.data().to_vec(),
+        expected_wormhole_message.try_to_vec().unwrap()
+    );
+
+    // Verify hashes in accumulator.
+    for msg in messages {
+        let msg_hash = Keccak160::hashv(&[[0u8].as_ref(), msg]);
+        let msg_proof = expected_accumulator.prove(msg).unwrap();
+        assert!(expected_accumulator.nodes.contains(&msg_hash));
+        assert!(expected_accumulator.check(msg_proof, msg));
+    }
+
+    // Verify accumulator state account.
+    let accumulator_state = get_accumulator_state(&bank, bank.slot() as u32);
+    let acc_state_magic = &accumulator_state[..4];
+    let acc_state_slot = LittleEndian::read_u64(&accumulator_state[4..12]);
+    let acc_state_ring_size = LittleEndian::read_u32(&accumulator_state[12..16]);
+
+    assert_eq!(acc_state_magic, b"PAS1");
+    assert_eq!(acc_state_slot, bank.slot());
+    assert_eq!(acc_state_ring_size, ACCUMULATOR_RING_SIZE);
+
+    // Verify the messages within the accumulator state account
+    // were in the accumulator as well.
+    let mut cursor = std::io::Cursor::new(&accumulator_state[16..]);
+    let num_elems = cursor.read_u32::<LittleEndian>().unwrap();
+    for _ in 0..(num_elems as usize) {
+        let element_len = cursor.read_u32::<LittleEndian>().unwrap();
+        let mut element_data = vec![0u8; element_len as usize];
+        cursor.read_exact(&mut element_data).unwrap();
+
+        let elem_hash = Keccak160::hashv(&[[0u8].as_ref(), element_data.as_slice()]);
+        let elem_proof = expected_accumulator.prove(element_data.as_slice()).unwrap();
+
+        assert!(expected_accumulator.nodes.contains(&elem_hash));
+        assert!(expected_accumulator.check(elem_proof, element_data.as_slice()));
+    }
+
+    // Verify sequence_tracker increments for wormhole to accept it.
+    assert_eq!(
+        get_acc_sequence_tracker(&bank).sequence,
+        sequence_tracker_before_bank_freeze.sequence + 1
+    );
+}
 #[test]
 fn test_get_accumulator_keys() {
     use pythnet_sdk::{pythnet, ACCUMULATOR_EMITTER_ADDRESS, MESSAGE_BUFFER_PID};
