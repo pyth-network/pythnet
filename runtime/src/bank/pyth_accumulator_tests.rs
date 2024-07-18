@@ -1,6 +1,6 @@
 use crate::{
     bank::{
-        pyth_accumulator::{get_accumulator_keys, ACCUMULATOR_RING_SIZE, ORACLE_PUBKEY},
+        pyth_accumulator::{get_accumulator_keys, ACCUMULATOR_RING_SIZE, ORACLE_PID},
         Bank,
     },
     genesis_utils::{create_genesis_config_with_leader, GenesisConfigInfo},
@@ -129,9 +129,8 @@ fn test_update_accumulator_sysvar() {
     // Store Message account so the accumulator sysvar updater can find it.
     bank.store_account(&price_message_key.pubkey(), &price_message_account);
 
-    let (price_feed_key, _bump) = Pubkey::find_program_address(&[b"123"], &ORACLE_PUBKEY);
-    let mut price_feed_account =
-        AccountSharedData::new(42, size_of::<PriceAccount>(), &ORACLE_PUBKEY);
+    let (price_feed_key, _bump) = Pubkey::find_program_address(&[b"123"], &ORACLE_PID);
+    let mut price_feed_account = AccountSharedData::new(42, size_of::<PriceAccount>(), &ORACLE_PID);
     let _ = PriceAccount::initialize(
         &AccountInfo::new(
             &price_feed_key.to_bytes().into(),
@@ -139,7 +138,7 @@ fn test_update_accumulator_sysvar() {
             true,
             &mut 0,
             &mut price_feed_account.data_mut(),
-            &ORACLE_PUBKEY.to_bytes().into(),
+            &ORACLE_PID.to_bytes().into(),
             false,
             Epoch::default(),
         ),
@@ -419,9 +418,8 @@ fn test_update_accumulator_end_of_block() {
     // Store Message account so the accumulator sysvar updater can find it.
     bank.store_account(&price_message_key.pubkey(), &price_message_account);
 
-    let (price_feed_key, _bump) = Pubkey::find_program_address(&[b"123"], &ORACLE_PUBKEY);
-    let mut price_feed_account =
-        AccountSharedData::new(42, size_of::<PriceAccount>(), &ORACLE_PUBKEY);
+    let (price_feed_key, _bump) = Pubkey::find_program_address(&[b"123"], &ORACLE_PID);
+    let mut price_feed_account = AccountSharedData::new(42, size_of::<PriceAccount>(), &ORACLE_PID);
     PriceAccount::initialize(
         &AccountInfo::new(
             &price_feed_key.to_bytes().into(),
@@ -429,7 +427,7 @@ fn test_update_accumulator_end_of_block() {
             true,
             &mut 0,
             &mut price_feed_account.data_mut(),
-            &ORACLE_PUBKEY.to_bytes().into(),
+            &ORACLE_PID.to_bytes().into(),
             false,
             Epoch::default(),
         ),
@@ -688,14 +686,14 @@ fn test_accumulator_v2() {
     bank = new_from_parent(&Arc::new(bank)); // Advance slot 2.
 
     let generate_price = |seeds, generate_buffers: bool| {
-        let (price_feed_key, _bump) = Pubkey::find_program_address(&[seeds], &ORACLE_PUBKEY);
+        let (price_feed_key, _bump) = Pubkey::find_program_address(&[seeds], &ORACLE_PID);
         let mut price_feed_account =
-            AccountSharedData::new(42, size_of::<PriceAccount>(), &ORACLE_PUBKEY);
+            AccountSharedData::new(42, size_of::<PriceAccount>(), &ORACLE_PID);
 
         let messages = {
             let price_feed_info_key = &price_feed_key.to_bytes().into();
             let price_feed_info_lamports = &mut 0;
-            let price_feed_info_owner = &ORACLE_PUBKEY.to_bytes().into();
+            let price_feed_info_owner = &ORACLE_PID.to_bytes().into();
             let price_feed_info_data = price_feed_account.data_mut();
             let price_feed_info = AccountInfo::new(
                 price_feed_info_key,

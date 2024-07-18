@@ -2,36 +2,49 @@ use {
     super::Bank,
     crate::accounts_index::{ScanConfig, ScanError},
     byteorder::LittleEndian,
+    byteorder::ReadBytesExt,
     itertools::Itertools,
     log::*,
     pyth_oracle::validator::AggregationError,
+    pythnet_sdk::{
+        accumulators::{merkle::MerkleAccumulator, Accumulator},
+        hashers::keccak256_160::Keccak160,
+        wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
+    },
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount},
-        feature_set,
+        borsh, feature_set,
         hash::hashv,
         pubkey::Pubkey,
     },
-    std::{
-        env::{self, VarError},
-        str::FromStr,
-    },
+    std::env::{self, VarError},
 };
 
 pub const ACCUMULATOR_RING_SIZE: u32 = 10_000;
 
 lazy_static! {
-    pub static ref ORACLE_PUBKEY: Pubkey = match env::var("PYTH_ORACLE_PUBKEY") {
-        Ok(value) => value
+    pub static ref MESSAGE_BUFFER_PID: Pubkey = env_pubkey_or(
+        "MESSAGE_BUFFER_PID",
+        Pubkey::new_from_array(pythnet_sdk::MESSAGE_BUFFER_PID),
+    );
+    pub static ref ACCUMULATOR_EMITTER_ADDR: Pubkey = env_pubkey_or(
+        "ACCUMULATOR_EMITTER_ADDR",
+        Pubkey::new_from_array(pythnet_sdk::ACCUMULATOR_EMITTER_ADDRESS),
+    );
+    pub static ref ACCUMULATOR_SEQUENCE_ADDR: Pubkey = env_pubkey_or(
+        "ACCUMULATOR_SEQUENCE_ADDR",
+        Pubkey::new_from_array(pythnet_sdk::pythnet::ACCUMULATOR_SEQUENCE_ADDR),
+    );
+    pub static ref WORMHOLE_PID: Pubkey = env_pubkey_or(
+        "WORMHOLE_PID",
+        Pubkey::new_from_array(pythnet_sdk::pythnet::WORMHOLE_PID),
+    );
+    pub static ref ORACLE_PID: Pubkey = env_pubkey_or(
+        "ORACLE_PID",
+        "FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH"
             .parse()
-            .expect("invalid value of PYTH_ORACLE_PUBKEY env var"),
-        Err(VarError::NotPresent) => {
-            // Pythnet oracle program address
-            "FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epH".parse().unwrap()
-        }
-        Err(VarError::NotUnicode(err)) => {
-            panic!("invalid value of PYTH_ORACLE_PUBKEY env var: {err:?}");
-        }
-    };
+            .unwrap(),
+    );
 }
 
 /// Accumulator specific error type. It would be nice to use `transaction::Error` but it does
@@ -82,16 +95,19 @@ pub fn update_accumulator(bank: &Bank) {
 
 /// Read the pubkey from the environment variable `var` or return `default`
 /// if the variable is not set.
-fn env_pubkey_or(
-    var: &str,
-    default: Pubkey,
-) -> std::result::Result<Pubkey, AccumulatorUpdateErrorV1> {
-    Ok(std::env::var(var)
-        .as_deref()
-        .map(Pubkey::from_str)
-        .ok()
-        .transpose()?
-        .unwrap_or(default))
+fn env_pubkey_or(var: &str, default: Pubkey) -> Pubkey {
+    match env::var(var) {
+        Ok(value) => value.parse().unwrap_or_else(|err| {
+            panic!(
+                "failed to parse env var {}={:?} as pubkey: {}",
+                var, value, err
+            )
+        }),
+        Err(VarError::NotPresent) => default,
+        Err(VarError::NotUnicode(value)) => {
+            panic!("invalid value of env var {}={:?}: not unicode", var, value);
+        }
+    }
 }
 
 /// Get all accumulator related pubkeys from environment variables
@@ -100,33 +116,13 @@ pub fn get_accumulator_keys() -> Vec<(
     &'static str,
     std::result::Result<Pubkey, AccumulatorUpdateErrorV1>,
 )> {
-    use pythnet_sdk::{pythnet, ACCUMULATOR_EMITTER_ADDRESS, MESSAGE_BUFFER_PID};
-    let accumulator_keys = vec![
-        (
-            "MESSAGE_BUFFER_PID",
-            Pubkey::new_from_array(MESSAGE_BUFFER_PID),
-        ),
-        // accumulator emitter address should always be the same regardless
-        // of environment but checking here for completeness
-        (
-            "ACCUMULATOR_EMITTER_ADDR",
-            Pubkey::new_from_array(ACCUMULATOR_EMITTER_ADDRESS),
-        ),
-        (
-            "ACCUMULATOR_SEQUENCE_ADDR",
-            Pubkey::new_from_array(pythnet::ACCUMULATOR_SEQUENCE_ADDR),
-        ),
-        (
-            "WORMHOLE_PID",
-            Pubkey::new_from_array(pythnet::WORMHOLE_PID),
-        ),
-    ];
-    let accumulator_pubkeys: Vec<(&str, std::result::Result<Pubkey, AccumulatorUpdateErrorV1>)> =
-        accumulator_keys
-            .iter()
-            .map(|(k, d)| (*k, env_pubkey_or(k, *d)))
-            .collect();
-    accumulator_pubkeys
+    vec![
+        ("MESSAGE_BUFFER_PID", Ok(*MESSAGE_BUFFER_PID)),
+        ("ACCUMULATOR_EMITTER_ADDR", Ok(*ACCUMULATOR_EMITTER_ADDR)),
+        ("ACCUMULATOR_SEQUENCE_ADDR", Ok(*ACCUMULATOR_SEQUENCE_ADDR)),
+        ("WORMHOLE_PID", Ok(*WORMHOLE_PID)),
+        ("ORACLE_PID", Ok(*ORACLE_PID)),
+    ]
 }
 
 pub fn update_v1<'a>(
@@ -134,30 +130,16 @@ pub fn update_v1<'a>(
     v2_messages: &[Vec<u8>],
     use_message_buffers: bool,
 ) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
-    use {
-        byteorder::ReadBytesExt,
-        pythnet_sdk::{
-            accumulators::{merkle::MerkleAccumulator, Accumulator},
-            hashers::keccak256_160::Keccak160,
-            MESSAGE_BUFFER_PID,
-        },
-        solana_sdk::borsh,
-    };
-
     // Use the current Clock to determine the index into the accumulator ring buffer.
     let ring_index = (bank.slot() % 10_000) as u32;
 
     // Find all accounts owned by the Message Buffer program using get_program_accounts, and
     // extract the account data.
-    let message_buffer_pid = env_pubkey_or(
-        "MESSAGE_BUFFER_PID",
-        Pubkey::new_from_array(MESSAGE_BUFFER_PID),
-    )?;
 
     let message_buffer_accounts;
     let v1_messages = if use_message_buffers {
         message_buffer_accounts = bank
-            .get_program_accounts(&message_buffer_pid, &ScanConfig::new(true))
+            .get_program_accounts(&MESSAGE_BUFFER_PID, &ScanConfig::new(true))
             .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
 
         let preimage = b"account:MessageBuffer";
@@ -266,28 +248,12 @@ fn post_accumulator_attestation(
     >,
     ring_index: u32,
 ) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
-    use pythnet_sdk::{
-        pythnet,
-        wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
-        ACCUMULATOR_EMITTER_ADDRESS,
-    };
-
-    let accumulator_sequence_addr = env_pubkey_or(
-        "ACCUMULATOR_SEQUENCE_ADDR",
-        Pubkey::new_from_array(pythnet::ACCUMULATOR_SEQUENCE_ADDR),
-    )?;
-
-    let accumulator_emitter_addr = env_pubkey_or(
-        "ACCUMULATOR_EMITTER_ADDR",
-        Pubkey::new_from_array(ACCUMULATOR_EMITTER_ADDRESS),
-    )?;
-
     // Wormhole uses a Sequence account that is incremented each time a message is posted. As
     // we aren't calling Wormhole we need to bump this ourselves. If it doesn't exist, we just
     // create it instead.
     let mut sequence: AccumulatorSequenceTracker = {
         let data = bank
-            .get_account_with_fixed_root(&accumulator_sequence_addr)
+            .get_account_with_fixed_root(&ACCUMULATOR_SEQUENCE_ADDR)
             .unwrap_or_default();
         let data = data.data();
         solana_sdk::borsh::try_from_slice_unchecked(data)
@@ -311,7 +277,7 @@ fn post_accumulator_attestation(
                 nonce: 0,
                 sequence: sequence.sequence,
                 emitter_chain: 26,
-                emitter_address: accumulator_emitter_addr.to_bytes(),
+                emitter_address: ACCUMULATOR_EMITTER_ADDR.to_bytes(),
                 payload: acc.serialize(bank.slot(), ACCUMULATOR_RING_SIZE),
             }
         } else {
@@ -322,7 +288,7 @@ fn post_accumulator_attestation(
                 submission_time: bank.clock().unix_timestamp as u32,
                 sequence: sequence.sequence,
                 emitter_chain: 26,
-                emitter_address: accumulator_emitter_addr.to_bytes(),
+                emitter_address: ACCUMULATOR_EMITTER_ADDR.to_bytes(),
                 payload: acc.serialize(bank.slot(), ACCUMULATOR_RING_SIZE),
                 ..Default::default()
             }
@@ -330,18 +296,13 @@ fn post_accumulator_attestation(
     };
 
     debug!("Accumulator: Wormhole message data: {:?}", message.message);
-    let wormhole_pid = env_pubkey_or(
-        "WORMHOLE_PID",
-        Pubkey::new_from_array(pythnet::WORMHOLE_PID),
-    )?;
-
     // Now we can bump and write the Sequence account.
     sequence.sequence += 1;
     let sequence = solana_sdk::borsh::BorshSerialize::try_to_vec(&sequence)
         .map_err(|_| AccumulatorUpdateErrorV1::FailedSequenceSerialization)?;
     let sequence_balance = bank.get_minimum_balance_for_rent_exemption(sequence.len());
     let sequence_account = {
-        let owner = &wormhole_pid;
+        let owner = &WORMHOLE_PID;
         let mut account = AccountSharedData::new(sequence_balance, sequence.len(), owner);
         account.set_data(sequence);
         account
@@ -352,7 +313,7 @@ fn post_accumulator_attestation(
         .map_err(|_| AccumulatorUpdateErrorV1::FailedMessageSerialization)?;
     let message_balance = bank.get_minimum_balance_for_rent_exemption(message.len());
     let message_account = {
-        let owner = &wormhole_pid;
+        let owner = &WORMHOLE_PID;
         let mut account = AccountSharedData::new(message_balance, message.len(), owner);
         account.set_data(message);
         account
@@ -362,10 +323,10 @@ fn post_accumulator_attestation(
     // for RPC users to select the message for an associated VAA.
     let (message_pda, _) = Pubkey::find_program_address(
         &[b"AccumulatorMessage", &ring_index.to_be_bytes()],
-        &wormhole_pid,
+        &WORMHOLE_PID,
     );
 
-    bank.store_account_and_update_capitalization(&accumulator_sequence_addr, &sequence_account);
+    bank.store_account_and_update_capitalization(&ACCUMULATOR_SEQUENCE_ADDR, &sequence_account);
 
     info!("Accumulator: Writing wormhole message to {:?}", message_pda);
     bank.store_account_and_update_capitalization(&message_pda, &message_account);
@@ -375,7 +336,7 @@ fn post_accumulator_attestation(
 
 pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
     let accounts = bank
-        .get_program_accounts(&ORACLE_PUBKEY, &ScanConfig::new(true))
+        .get_program_accounts(&ORACLE_PID, &ScanConfig::new(true))
         .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
 
     let mut any_v1_aggregations = false;
