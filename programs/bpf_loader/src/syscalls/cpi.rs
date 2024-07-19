@@ -539,7 +539,9 @@ impl<'a, 'b> SyscallInvokeSigned<'a, 'b> for SyscallInvokeSignedC<'a, 'b> {
                 vm_addr,
                 size_of::<u64>() as u64,
             )?;
-            let ref_to_len_in_vm = unsafe { &mut *(addr as *mut u64) };
+            // This lint was not present on Rust 1.60.
+            #[allow(unknown_lints, invalid_reference_casting)]
+            let ref_to_len_in_vm = { unsafe { &mut *(addr as *mut u64) } };
 
             let ref_of_len_in_input_buffer =
                 (account_info.data_addr as *mut u8 as u64).saturating_sub(8);

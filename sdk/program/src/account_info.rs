@@ -183,6 +183,8 @@ impl<'a> AccountInfo<'a> {
 
     pub fn assign(&self, new_owner: &Pubkey) {
         // Set the non-mut owner field
+        // This lint was not present on Rust 1.60.
+        #[allow(unknown_lints, invalid_reference_casting)]
         unsafe {
             std::ptr::write_volatile(
                 self.owner as *const Pubkey as *mut [u8; 32],
