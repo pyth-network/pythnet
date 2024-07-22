@@ -668,9 +668,22 @@ fn test_update_accumulator_end_of_block() {
     );
 }
 
-// This test will
 #[test]
-fn test_accumulator_v2() {
+fn test_accumulator_v2_all_v2() {
+    test_accumulator_v2([false, false, false, false]);
+}
+
+#[test]
+fn test_accumulator_v2_all_v1() {
+    test_accumulator_v2([true, true, true, true]);
+}
+
+#[test]
+fn test_accumulator_v2_mixed() {
+    test_accumulator_v2([true, true, false, false]);
+}
+
+fn test_accumulator_v2(generate_buffers: [bool; 4]) {
     let leader_pubkey = solana_sdk::pubkey::new_rand();
     let GenesisConfigInfo {
         mut genesis_config, ..
@@ -681,9 +694,6 @@ fn test_accumulator_v2() {
     let slots_in_epoch = 32;
     genesis_config.epoch_schedule = EpochSchedule::new(slots_in_epoch);
     let mut bank = Bank::new_for_tests(&genesis_config);
-
-    bank = new_from_parent(&Arc::new(bank)); // Advance slot 1.
-    bank = new_from_parent(&Arc::new(bank)); // Advance slot 2.
 
     let generate_price = |seeds, generate_buffers: bool| {
         let (price_feed_key, _bump) = Pubkey::find_program_address(&[seeds], &ORACLE_PID);
@@ -730,8 +740,10 @@ fn test_accumulator_v2() {
             // sorts first.
             let message_buffer_bytes = create_message_buffer_bytes(messages.clone());
 
+            let mut seed = vec![1; 32];
+            seed[..seeds.len()].copy_from_slice(seeds);
             // Create a Message account.
-            let price_message_key = keypair_from_seed(&[1u8; 32]).unwrap();
+            let price_message_key = keypair_from_seed(&seed).unwrap();
             let mut price_message_account = bank
                 .get_account(&price_message_key.pubkey())
                 .unwrap_or_default();
@@ -774,17 +786,23 @@ fn test_accumulator_v2() {
         .is_active(&feature_set::redo_move_accumulator_to_end_of_block::id()));
 
     let prices_with_messages = [
-        generate_price(b"seeds_1", false),
-        generate_price(b"seeds_2", false),
-        generate_price(b"seeds_3", false),
-        generate_price(b"seeds_4", false),
+        generate_price(b"seeds_1", generate_buffers[0]),
+        generate_price(b"seeds_2", generate_buffers[1]),
+        generate_price(b"seeds_3", generate_buffers[2]),
+        generate_price(b"seeds_4", generate_buffers[3]),
     ];
+
+    bank = new_from_parent(&Arc::new(bank)); // Advance slot 1.
+    bank = new_from_parent(&Arc::new(bank)); // Advance slot 2.
 
     let messages = prices_with_messages
         .iter()
         .map(|(_, messages)| messages)
         .flatten()
-        .map(|message| &message[..]);
+        .map(|message| &message[..])
+        .sorted_unstable()
+        .dedup()
+        .collect::<Vec<_>>();
 
     // Trigger Aggregation. We freeze instead of new_from_parent so
     // we can keep access to the bank.
@@ -795,13 +813,13 @@ fn test_accumulator_v2() {
     // to offset the ring index as our test is always below 10K slots.
     let wormhole_message_account = get_wormhole_message_account(&bank, bank.slot() as u32);
     assert_ne!(wormhole_message_account.data().len(), 0);
-    PostedMessageUnreliableData::deserialize(&mut wormhole_message_account.data()).unwrap();
+    let deserialized_wormhole_message =
+        PostedMessageUnreliableData::deserialize(&mut wormhole_message_account.data()).unwrap();
 
     // Create MerkleAccumulator by hand to verify that the Wormhole message
     // contents are correctg.
     let expected_accumulator =
-        MerkleAccumulator::<Keccak160>::from_set(messages.clone().sorted_unstable().dedup())
-            .unwrap();
+        MerkleAccumulator::<Keccak160>::from_set(messages.iter().copied()).unwrap();
 
     let expected_wormhole_message_payload =
         expected_accumulator.serialize(bank.slot(), ACCUMULATOR_RING_SIZE);
@@ -818,6 +836,10 @@ fn test_accumulator_v2() {
             ..Default::default()
         },
     };
+    assert_eq!(
+        deserialized_wormhole_message.payload,
+        expected_wormhole_message.payload
+    );
 
     assert_eq!(
         wormhole_message_account.data().to_vec(),
@@ -876,6 +898,7 @@ fn test_get_accumulator_keys() {
         Pubkey::new_from_array(ACCUMULATOR_EMITTER_ADDRESS),
         Pubkey::new_from_array(pythnet::ACCUMULATOR_SEQUENCE_ADDR),
         Pubkey::new_from_array(pythnet::WORMHOLE_PID),
+        *ORACLE_PID,
     ];
     assert_eq!(accumulator_keys, expected_pyth_keys);
 }

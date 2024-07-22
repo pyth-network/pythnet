@@ -3,7 +3,6 @@ use {
     crate::accounts_index::{ScanConfig, ScanError},
     byteorder::LittleEndian,
     byteorder::ReadBytesExt,
-    itertools::Itertools,
     log::*,
     pyth_oracle::validator::AggregationError,
     pythnet_sdk::{
@@ -187,8 +186,6 @@ pub fn update_v1<'a>(
             .collect::<std::result::Result<Vec<_>, std::io::Error>>()?
             .into_iter()
             .flatten()
-            .sorted_unstable()
-            .dedup()
             .collect()
     } else {
         Vec::new()
@@ -196,6 +193,8 @@ pub fn update_v1<'a>(
 
     let mut messages = v1_messages;
     messages.extend(v2_messages.iter().map(|x| &**x));
+    messages.sort_unstable();
+    messages.dedup();
 
     // We now generate a Proof PDA (Owned by the System Program) to store the resulting Proof
     // Set. The derivation includes the ring buffer index to simulate a ring buffer in order
