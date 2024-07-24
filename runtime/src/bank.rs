@@ -199,6 +199,7 @@ mod sysvar_cache;
 mod transaction_account_state_info;
 
 pub mod pyth_accumulator;
+mod pyth_batch_publish;
 
 #[cfg(test)]
 mod pyth_accumulator_tests;

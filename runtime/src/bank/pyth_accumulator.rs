@@ -1,5 +1,5 @@
 use {
-    super::Bank,
+    super::{pyth_batch_publish, Bank},
     crate::accounts_index::{IndexKey, ScanConfig, ScanError},
     byteorder::{LittleEndian, ReadBytesExt},
     log::*,
@@ -17,7 +17,10 @@ use {
         hash::hashv,
         pubkey::Pubkey,
     },
-    std::env::{self, VarError},
+    std::{
+        collections::HashMap,
+        env::{self, VarError},
+    },
 };
 
 pub const ACCUMULATOR_RING_SIZE: u32 = 10_000;
@@ -48,6 +51,13 @@ lazy_static! {
     pub static ref STAKE_CAPS_PARAMETERS_ADDR: Pubkey = env_pubkey_or(
         "STAKE_CAPS_PARAMETERS_ADDR",
         "879ZVNagiWaAKsWDjGVf8pLq1wUBeBz7sREjUh3hrU36"
+            .parse()
+            .unwrap(),
+    );
+    pub static ref BATCH_PUBLISH_PID: Pubkey = env_pubkey_or(
+        "BATCH_PUBLISH_PID",
+        // TODO: replace with real program id
+        "FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epA"
             .parse()
             .unwrap(),
     );
@@ -132,6 +142,7 @@ pub fn get_accumulator_keys() -> Vec<(
             "STAKE_CAPS_PARAMETERS_ADDR",
             Ok(*STAKE_CAPS_PARAMETERS_ADDR),
         ),
+        ("BATCH_PUBLISH_PID", Ok(*BATCH_PUBLISH_PID)),
     ]
 }
 
@@ -427,21 +438,34 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
         v2_messages.push(publisher_stake_caps_message);
     }
 
-    let mut measure = Measure::start("update_v2_aggregate_price");
+    let new_prices = pyth_batch_publish::extract_batch_publish_prices(bank).unwrap_or_else(|err| {
+        warn!("extract_batch_publish_prices failed: {}", err);
+        HashMap::new()
+    });
 
+    let mut measure = Measure::start("update_v2_aggregate_price");
     for (pubkey, mut account) in accounts {
         let mut price_account_data = account.data().to_owned();
+        let price_account = if let Ok(data) =
+            pyth_oracle::validator::validate_price_account(&mut price_account_data)
+        {
+            data
+        } else {
+            continue; // Not a price account.
+        };
+
+        let mut need_save =
+            pyth_batch_publish::apply_published_prices(price_account, &new_prices, bank.slot());
 
         // Perform Accumulation
         match pyth_oracle::validator::aggregate_price(
             bank.slot(),
             bank.clock().unix_timestamp,
             &pubkey.to_bytes().into(),
-            &mut price_account_data,
+            price_account,
         ) {
             Ok(messages) => {
-                account.set_data(price_account_data);
-                bank.store_account_and_update_capitalization(&pubkey, &account);
+                need_save = true;
                 v2_messages.extend(messages);
             }
             Err(err) => match err {
@@ -450,6 +474,10 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
                     any_v1_aggregations = true;
                 }
             },
+        }
+        if need_save {
+            account.set_data(price_account_data);
+            bank.store_account_and_update_capitalization(&pubkey, &account);
         }
     }
 

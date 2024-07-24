@@ -52,7 +52,7 @@ use {
             AccountIndex, AccountSecondaryIndexes, AccountSecondaryIndexesIncludeExclude,
             AccountsIndexConfig, IndexLimitMb,
         },
-        bank::pyth_accumulator::{MESSAGE_BUFFER_PID, ORACLE_PID},
+        bank::pyth_accumulator::{BATCH_PUBLISH_PID, MESSAGE_BUFFER_PID, ORACLE_PID},
         hardened_unpack::MAX_GENESIS_ARCHIVE_UNPACKED_SIZE,
         runtime_config::RuntimeConfig,
         snapshot_config::SnapshotConfig,
@@ -3203,12 +3203,14 @@ fn process_account_indexes(matches: &ArgMatches) -> AccountSecondaryIndexes {
     if include_keys {
         if !account_indexes_include_keys.contains(&*ORACLE_PID)
             || !account_indexes_include_keys.contains(&*MESSAGE_BUFFER_PID)
+            || !account_indexes_include_keys.contains(&*BATCH_PUBLISH_PID)
         {
             panic!(
                 "The oracle program id and message buffer program id must be included in the account index. Add the following flags\n\
                 --account-index-include-key {}\n\
+                --account-index-include-key {}\n\
                 --account-index-include-key {}\n",
-                &*ORACLE_PID, &*MESSAGE_BUFFER_PID
+                &*ORACLE_PID, &*MESSAGE_BUFFER_PID, &*BATCH_PUBLISH_PID,
             );
         }
     }
@@ -3216,6 +3218,7 @@ fn process_account_indexes(matches: &ArgMatches) -> AccountSecondaryIndexes {
     if exclude_keys {
         if account_indexes_exclude_keys.contains(&*ORACLE_PID)
             || account_indexes_exclude_keys.contains(&*MESSAGE_BUFFER_PID)
+            || account_indexes_exclude_keys.contains(&*BATCH_PUBLISH_PID)
         {
             panic!("The oracle program id and message buffer program id must *not* be excluded from the account index.");
         }
