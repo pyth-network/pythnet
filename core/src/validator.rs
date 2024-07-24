@@ -1,7 +1,6 @@
 //! The `validator` module hosts all the validator microservices.
 
 pub use solana_perf::report_target_features;
-use solana_runtime::bank::pyth_accumulator;
 use {
     crate::{
         accounts_hash_verifier::AccountsHashVerifier,
@@ -75,7 +74,7 @@ use {
         accounts_db::{AccountShrinkThreshold, AccountsDbConfig},
         accounts_index::AccountSecondaryIndexes,
         accounts_update_notifier_interface::AccountsUpdateNotifier,
-        bank::Bank,
+        bank::{pyth_accumulator, Bank},
         bank_forks::BankForks,
         commitment::BlockCommitmentCache,
         cost_model::CostModel,

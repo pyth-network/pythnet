@@ -204,7 +204,7 @@ pub fn activate_all_features(genesis_config: &mut GenesisConfig) {
 /// Based on v1.10.24 state at pythnet launch.
 pub fn activate_pythnet_genesis_features(genesis_config: &mut GenesisConfig) {
     // Activate all features at genesis in development mode
-    for (feature_id, _) in &*solana_sdk::feature_set::PYTHNET_GENESIS_FEATURES {
+    for feature_id in solana_sdk::feature_set::PYTHNET_GENESIS_FEATURES.keys() {
         genesis_config.accounts.insert(
             *feature_id,
             Account::from(feature::create_account(

@@ -28,7 +28,8 @@ impl<T> OptionSerializer<T> {
     }
 
     pub fn as_ref(&self) -> OptionSerializer<&T> {
-        #[allow(clippy::needless_match)] // The nightly clippy used by CI is incorrect here
+        #[allow(unknown_lints, clippy::needless_match)]
+        // The nightly clippy used by CI is incorrect here
         match self {
             OptionSerializer::Some(item) => OptionSerializer::Some(item),
             OptionSerializer::None => OptionSerializer::None,

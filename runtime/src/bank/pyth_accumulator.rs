@@ -1,8 +1,7 @@
 use {
     super::Bank,
     crate::accounts_index::{ScanConfig, ScanError},
-    byteorder::LittleEndian,
-    byteorder::ReadBytesExt,
+    byteorder::{LittleEndian, ReadBytesExt},
     log::*,
     pyth_oracle::validator::AggregationError,
     pythnet_sdk::{
@@ -124,7 +123,7 @@ pub fn get_accumulator_keys() -> Vec<(
     ]
 }
 
-pub fn update_v1<'a>(
+pub fn update_v1(
     bank: &Bank,
     v2_messages: &[Vec<u8>],
     use_message_buffers: bool,
@@ -166,7 +165,7 @@ pub fn update_v1<'a>(
                 let mut header_begin = header_len;
                 let mut inputs = Vec::new();
                 let mut cur_end_offsets_idx: usize = 0;
-                while let Some(end) = cursor.read_u16::<LittleEndian>().ok() {
+                while let Ok(end) = cursor.read_u16::<LittleEndian>() {
                     if end == 0 || cur_end_offsets_idx == (u8::MAX as usize) {
                         break;
                     }

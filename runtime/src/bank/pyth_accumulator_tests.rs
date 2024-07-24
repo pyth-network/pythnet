@@ -1,35 +1,37 @@
-use crate::{
-    bank::{
-        pyth_accumulator::{get_accumulator_keys, ACCUMULATOR_RING_SIZE, ORACLE_PID},
-        Bank,
+use {
+    crate::{
+        bank::{
+            pyth_accumulator::{get_accumulator_keys, ACCUMULATOR_RING_SIZE, ORACLE_PID},
+            Bank,
+        },
+        genesis_utils::{create_genesis_config_with_leader, GenesisConfigInfo},
     },
-    genesis_utils::{create_genesis_config_with_leader, GenesisConfigInfo},
+    byteorder::{ByteOrder, LittleEndian, ReadBytesExt},
+    itertools::Itertools,
+    pyth_oracle::{
+        solana_program::account_info::AccountInfo, PriceAccount, PriceAccountFlags, PythAccount,
+        PythOracleSerialize,
+    },
+    pythnet_sdk::{
+        accumulators::{merkle::MerkleAccumulator, Accumulator},
+        hashers::{keccak256_160::Keccak160, Hasher},
+        wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
+        ACCUMULATOR_EMITTER_ADDRESS,
+    },
+    solana_sdk::{
+        account::{AccountSharedData, ReadableAccount, WritableAccount},
+        borsh::{BorshDeserialize, BorshSerialize},
+        clock::Epoch,
+        epoch_schedule::EpochSchedule,
+        feature::{self, Feature},
+        feature_set,
+        hash::hashv,
+        pubkey::Pubkey,
+        signature::keypair_from_seed,
+        signer::Signer,
+    },
+    std::{io::Read, mem::size_of, sync::Arc},
 };
-use byteorder::ByteOrder;
-use byteorder::{LittleEndian, ReadBytesExt};
-use itertools::Itertools;
-use pyth_oracle::PythOracleSerialize;
-use pyth_oracle::{solana_program::account_info::AccountInfo, PriceAccountFlags};
-use pyth_oracle::{PriceAccount, PythAccount};
-use pythnet_sdk::{
-    accumulators::{merkle::MerkleAccumulator, Accumulator},
-    hashers::{keccak256_160::Keccak160, Hasher},
-    wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
-    ACCUMULATOR_EMITTER_ADDRESS,
-};
-use solana_sdk::{
-    account::{AccountSharedData, ReadableAccount, WritableAccount},
-    borsh::{BorshDeserialize, BorshSerialize},
-    clock::Epoch,
-    epoch_schedule::EpochSchedule,
-    feature::{self, Feature},
-    feature_set,
-    hash::hashv,
-    pubkey::Pubkey,
-    signature::keypair_from_seed,
-    signer::Signer,
-};
-use std::{io::Read, mem::size_of, sync::Arc};
 
 // Create Message Account Bytes
 //
@@ -60,7 +62,7 @@ fn get_acc_sequence_tracker(bank: &Bank) -> AccumulatorSequenceTracker {
             pythnet_sdk::pythnet::ACCUMULATOR_SEQUENCE_ADDR,
         ))
         .unwrap();
-    AccumulatorSequenceTracker::try_from_slice(&mut account.data()).unwrap()
+    AccumulatorSequenceTracker::try_from_slice(account.data()).unwrap()
 }
 
 fn get_wormhole_message_account(bank: &Bank, ring_index: u32) -> AccountSharedData {
@@ -137,7 +139,7 @@ fn test_update_accumulator_sysvar() {
             false,
             true,
             &mut 0,
-            &mut price_feed_account.data_mut(),
+            price_feed_account.data_mut(),
             &ORACLE_PID.to_bytes().into(),
             false,
             Epoch::default(),
@@ -167,11 +169,9 @@ fn test_update_accumulator_sysvar() {
     let wormhole_message_account = bank
         .get_account(&wormhole_message_pubkey)
         .unwrap_or_default();
-    assert_eq!(
-        bank.feature_set
-            .is_active(&feature_set::enable_accumulator_sysvar::id()),
-        false
-    );
+    assert!(!bank
+        .feature_set
+        .is_active(&feature_set::enable_accumulator_sysvar::id()));
     assert_eq!(wormhole_message_account.data().len(), 0);
 
     // Enable Accumulator Feature (42 = random lamport balance, and the meaning of the universe).
@@ -186,11 +186,9 @@ fn test_update_accumulator_sysvar() {
     }
 
     // Feature should now be enabled on the new bank as the epoch has changed.
-    assert_eq!(
-        bank.feature_set
-            .is_active(&feature_set::enable_accumulator_sysvar::id()),
-        true
-    );
+    assert!(!bank
+        .feature_set
+        .is_active(&feature_set::enable_accumulator_sysvar::id()));
 
     // The current sequence value will be used in the message when the bank advances, so we snapshot
     // it here before advancing the slot so we can assert the correct sequence is present in the message.
@@ -306,7 +304,7 @@ fn test_update_accumulator_sysvar() {
     let message_1 = vec![2u8; 127];
     let message_2 = vec![3u8; 254];
 
-    let updated_messages = vec![message_1.clone(), message_2.clone(), message_0.clone()];
+    let updated_messages = vec![message_1, message_2, message_0];
 
     let updated_message_buffer_bytes = create_message_buffer_bytes(updated_messages.clone());
     price_message_account.set_data(updated_message_buffer_bytes);
@@ -426,7 +424,7 @@ fn test_update_accumulator_end_of_block() {
             false,
             true,
             &mut 0,
-            &mut price_feed_account.data_mut(),
+            price_feed_account.data_mut(),
             &ORACLE_PID.to_bytes().into(),
             false,
             Epoch::default(),
@@ -453,16 +451,12 @@ fn test_update_accumulator_end_of_block() {
     // still [].
     bank = new_from_parent(&Arc::new(bank));
 
-    assert_eq!(
-        bank.feature_set
-            .is_active(&feature_set::enable_accumulator_sysvar::id()),
-        false
-    );
-    assert_eq!(
-        bank.feature_set
-            .is_active(&feature_set::move_accumulator_to_end_of_block::id()),
-        false
-    );
+    assert!(!bank
+        .feature_set
+        .is_active(&feature_set::enable_accumulator_sysvar::id()));
+    assert!(!bank
+        .feature_set
+        .is_active(&feature_set::move_accumulator_to_end_of_block::id()));
 
     let wormhole_message_account = bank
         .get_account(&wormhole_message_pubkey)
@@ -488,16 +482,12 @@ fn test_update_accumulator_end_of_block() {
     }
 
     // Features should now be enabled on the new bank as the epoch has changed.
-    assert_eq!(
-        bank.feature_set
-            .is_active(&feature_set::enable_accumulator_sysvar::id()),
-        true
-    );
-    assert_eq!(
-        bank.feature_set
-            .is_active(&feature_set::move_accumulator_to_end_of_block::id()),
-        true
-    );
+    assert!(bank
+        .feature_set
+        .is_active(&feature_set::enable_accumulator_sysvar::id()));
+    assert!(bank
+        .feature_set
+        .is_active(&feature_set::move_accumulator_to_end_of_block::id()));
 
     // The current sequence value will be used in the message when the bank advances, so we snapshot
     // it here before freezing the bank so we can assert the correct sequence is present in the message.
@@ -614,7 +604,7 @@ fn test_update_accumulator_end_of_block() {
     let message_1 = vec![2u8; 127];
     let message_2 = vec![3u8; 254];
 
-    let updated_messages = vec![message_1.clone(), message_2.clone(), message_0.clone()];
+    let updated_messages = vec![message_1, message_2, message_0];
 
     let updated_message_buffer_bytes = create_message_buffer_bytes(updated_messages.clone());
     price_message_account.set_data(updated_message_buffer_bytes);
@@ -783,8 +773,7 @@ fn test_accumulator_v2(generate_buffers: [bool; 4]) {
 
     let messages = prices_with_messages
         .iter()
-        .map(|(_, messages)| messages)
-        .flatten()
+        .flat_map(|(_, messages)| messages)
         .map(|message| &message[..])
         .sorted_unstable()
         .dedup()
@@ -803,7 +792,7 @@ fn test_accumulator_v2(generate_buffers: [bool; 4]) {
         PostedMessageUnreliableData::deserialize(&mut wormhole_message_account.data()).unwrap();
 
     // Create MerkleAccumulator by hand to verify that the Wormhole message
-    // contents are correctg.
+    // contents are correct.
     let expected_accumulator =
         MerkleAccumulator::<Keccak160>::from_set(messages.iter().copied()).unwrap();
 
