@@ -736,8 +736,6 @@ fn test_accumulator_v2(generate_buffers: [bool; 4]) {
         bank.store_account(&price_feed_key, &price_feed_account);
 
         if generate_buffers {
-            // Insert into message buffer in reverse order to test that accumulator
-            // sorts first.
             let message_buffer_bytes = create_message_buffer_bytes(messages.clone());
 
             let mut seed = vec![1; 32];
@@ -759,18 +757,6 @@ fn test_accumulator_v2(generate_buffers: [bool; 4]) {
 
         (price_feed_key, messages)
     };
-
-    // TODO: New test functionality here.
-    // 1. Create Price Feed Accounts owned by ORACLE_PUBKEY
-    // 2. Populate Price Feed Accounts
-    // 3. Call update_v2()
-    //    - Cases:
-    //      - No V1 Messages, Only Price Accounts with no V2
-    //      - No V1 Messages, Some Price Accounts with no V2
-    //      - Some V1 Messages, No Price Accounts with no V2
-    //      - Some V1 Messages, Some Price Accounts with no V2
-    //      - Simulate PriceUpdate that WOULD trigger a real V1 aggregate before End of Slot
-    //      - Simulate PriceUpdate that doesn't trigger a real V1 aggregate, only V2.
 
     assert!(bank
         .feature_set
