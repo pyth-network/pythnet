@@ -186,7 +186,7 @@ fn test_update_accumulator_sysvar() {
     }
 
     // Feature should now be enabled on the new bank as the epoch has changed.
-    assert!(!bank
+    assert!(bank
         .feature_set
         .is_active(&feature_set::enable_accumulator_sysvar::id()));
 
@@ -778,6 +778,7 @@ fn test_accumulator_v2(generate_buffers: [bool; 4]) {
         .sorted_unstable()
         .dedup()
         .collect::<Vec<_>>();
+    assert_eq!(messages.len(), 8);
 
     // Trigger Aggregation. We freeze instead of new_from_parent so
     // we can keep access to the bank.
