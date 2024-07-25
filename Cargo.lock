@@ -3555,8 +3555,8 @@ dependencies = [
 
 [[package]]
 name = "pyth-oracle"
-version = "2.32.0"
-source = "git+https://github.com/pyth-network/pyth-client?tag=oracle-v2.32.0#a2786818bbd612ed512befe6c6863745b1b67c06"
+version = "2.32.1"
+source = "git+https://github.com/pyth-network/pyth-client?tag=oracle-v2.32.1#94babc4096eb7ff804f5087fb9600ee110b9591d"
 dependencies = [
  "bindgen 0.60.1",
  "bitflags 2.6.0",
