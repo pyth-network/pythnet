@@ -1,6 +1,6 @@
 use {
     super::Bank,
-    crate::accounts_index::{ScanConfig, ScanError},
+    crate::accounts_index::{IndexKey, ScanConfig, ScanError},
     byteorder::{LittleEndian, ReadBytesExt},
     log::*,
     pyth_oracle::validator::AggregationError,
@@ -140,7 +140,12 @@ pub fn update_v1(
         let mut measure = Measure::start("update_v1_load_program_accounts");
 
         message_buffer_accounts = bank
-            .get_program_accounts(&MESSAGE_BUFFER_PID, &ScanConfig::new(true))
+            .get_filtered_indexed_accounts(
+                &IndexKey::ProgramId(*MESSAGE_BUFFER_PID),
+                |account| account.owner() == &*MESSAGE_BUFFER_PID,
+                &ScanConfig::new(true),
+                None,
+            )
             .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
 
         measure.stop();
@@ -380,7 +385,12 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
     let mut measure = Measure::start("update_v2_load_program_accounts");
 
     let accounts = bank
-        .get_program_accounts(&ORACLE_PID, &ScanConfig::new(true))
+        .get_filtered_indexed_accounts(
+            &IndexKey::ProgramId(*ORACLE_PID),
+            |account| account.owner() == &*ORACLE_PID,
+            &ScanConfig::new(true),
+            None,
+        )
         .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
 
     measure.stop();
