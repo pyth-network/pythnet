@@ -3177,7 +3177,7 @@ fn process_account_indexes(matches: &ArgMatches) -> AccountSecondaryIndexes {
         })
         .collect();
 
-    assert(account_indexes.contains(&AccountIndex::ProgramId),
+    assert!(account_indexes.contains(&AccountIndex::ProgramId),
         "The indexing should be enabled for program-id accounts. Add the following flag:\n\
         --account-index program-id\n");
 
