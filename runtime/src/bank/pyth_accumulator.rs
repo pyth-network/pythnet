@@ -9,6 +9,7 @@ use {
         hashers::keccak256_160::Keccak160,
         wormhole::{AccumulatorSequenceTracker, MessageData, PostedMessageUnreliableData},
     },
+    solana_measure::measure::Measure,
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount},
         borsh, feature_set,
@@ -136,9 +137,19 @@ pub fn update_v1(
 
     let message_buffer_accounts;
     let v1_messages = if use_message_buffers {
+        let mut measure = Measure::start("update_v1_load_program_accounts");
+
         message_buffer_accounts = bank
             .get_program_accounts(&MESSAGE_BUFFER_PID, &ScanConfig::new(true))
             .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
+
+        measure.stop();
+        debug!(
+            "Accumulator: Loaded message buffer accounts in {}us",
+            measure.as_us()
+        );
+
+        let mut measure = Measure::start("update_v1_extract_message_data");
 
         let preimage = b"account:MessageBuffer";
         let mut expected_sighash = [0u8; 8];
@@ -154,7 +165,7 @@ pub fn update_v1(
 
         // This code, using the offsets in each Account, extracts the various data versions from
         // the account. We deduplicate this result because the accumulator expects a set.
-        message_buffer_accounts
+        let res = message_buffer_accounts
             .map(|(_, account)| {
                 let data = account.data();
                 let mut cursor = std::io::Cursor::new(&data);
@@ -185,10 +196,20 @@ pub fn update_v1(
             .collect::<std::result::Result<Vec<_>, std::io::Error>>()?
             .into_iter()
             .flatten()
-            .collect()
+            .collect();
+
+        measure.stop();
+        debug!(
+            "Accumulator: Extracted message data in {}us",
+            measure.as_us()
+        );
+
+        res
     } else {
         Vec::new()
     };
+
+    let mut measure = Measure::start("create_message_set");
 
     let mut messages = v1_messages;
     messages.extend(v2_messages.iter().map(|x| &**x));
@@ -220,11 +241,27 @@ pub fn update_v1(
         account
     };
 
+    measure.stop();
+    debug!("Accumulator: Created message set in {}us", measure.as_us());
+
     // Generate a Message owned by Wormhole to be sent cross-chain. This short-circuits the
     // Wormhole message generation code that would normally be called, but the Guardian
     // set filters our messages so this does not pose a security risk.
-    if let Some(accumulator) = MerkleAccumulator::<Keccak160>::from_set(messages.into_iter()) {
+    let mut measure = Measure::start("create_accumulator");
+
+    let maybe_accumulator = MerkleAccumulator::<Keccak160>::from_set(messages.into_iter());
+
+    measure.stop();
+    debug!("Accumulator: Created accumulator in {}us", measure.as_us());
+
+    if let Some(accumulator) = maybe_accumulator {
+        let mut measure = Measure::start("post_accumulator_attestation");
         post_accumulator_attestation(bank, accumulator, ring_index)?;
+        measure.stop();
+        debug!(
+            "Accumulator: Posted accumulator attestation in {}us",
+            measure.as_us()
+        );
     }
 
     // Write the Account Set into `accumulator_state` so that the hermes application can
@@ -233,7 +270,14 @@ pub fn update_v1(
         "Accumulator: Writing accumulator state to {:?}",
         accumulator_account
     );
+
+    let mut measure = Measure::start("store_account_and_update_capitalization");
     bank.store_account_and_update_capitalization(&accumulator_account, &accumulator_data);
+    measure.stop();
+    debug!(
+        "Accumulator: Stored accumulator state in {}us",
+        measure.as_us()
+    );
 
     Ok(())
 }
@@ -333,9 +377,19 @@ fn post_accumulator_attestation(
 }
 
 pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
+    let mut measure = Measure::start("update_v2_load_program_accounts");
+
     let accounts = bank
         .get_program_accounts(&ORACLE_PID, &ScanConfig::new(true))
         .map_err(AccumulatorUpdateErrorV1::GetProgramAccounts)?;
+
+    measure.stop();
+    debug!(
+        "Accumulator: Loaded oracle program accounts in {}us",
+        measure.as_us()
+    );
+
+    let mut measure = Measure::start("update_v2_aggregate_price");
 
     let mut any_v1_aggregations = false;
     let mut v2_messages = Vec::new();
@@ -363,6 +417,13 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
             },
         }
     }
+
+    measure.stop();
+    debug!(
+        "Accumulator: Aggregated oracle prices in {}us and generated {} messages",
+        measure.as_us(),
+        v2_messages.len()
+    );
 
     update_v1(bank, &v2_messages, any_v1_aggregations)
 }

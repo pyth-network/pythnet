@@ -3237,7 +3237,15 @@ impl Bank {
             // If accumulator move to end of block is active update the accumulator before doing
             // other tasks when freezing to avoid any conflicts.
             if accumulator_moved_to_end_of_block {
+                let mut measure = Measure::start("accumulator");
                 pyth_accumulator::update_accumulator(self);
+                measure.stop();
+
+                debug!(
+                    "Accumulator: Updated accumulator before freezing. Slot: {}, time: {}us",
+                    self.slot(),
+                    measure.as_us(),
+                );
             } else {
                 info!(
                     "Accumulator: Skipping accumulating end of block because the feature is disabled. Slot: {}",
@@ -3245,12 +3253,22 @@ impl Bank {
                 );
             }
 
+            let mut measure = Measure::start("freeze");
+
             // finish up any deferred changes to account state
             self.collect_rent_eagerly(false);
             self.collect_fees();
             self.distribute_rent();
             self.update_slot_history();
             self.run_incinerator();
+
+            measure.stop();
+            debug!(
+                "Bank frozen (non-accumulator): {} slot {} time: {}us",
+                self.collector_id,
+                self.slot(),
+                measure.as_us()
+            );
 
             // freeze is a one-way trip, idempotent
             self.freeze_started.store(true, Relaxed);
