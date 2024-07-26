@@ -122,14 +122,14 @@ for Cargo_toml in "${Cargo_tomls[@]}"; do
   # Set new crate version
   (
     set -x
-    gsed -i "$Cargo_toml" -e "0,/^version =/{s/^version = \"[^\"]*\"$/version = \"$newVersion\"/}"
+    sed -i "$Cargo_toml" -e "0,/^version =/{s/^version = \"[^\"]*\"$/version = \"$newVersion\"/}"
   )
 
   # Fix up the version references to other internal crates
   for crate in "${crates[@]}"; do
     (
       set -x
-      gsed -i "$Cargo_toml" -e "
+      sed -i "$Cargo_toml" -e "
         s/^$crate = { *path *= *\"\([^\"]*\)\" *, *version *= *\"[^\"]*\"\(.*\)} *\$/$crate = \{ path = \"\1\", version = \"=$newVersion\"\2\}/
       "
     )
