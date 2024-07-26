@@ -1,5 +1,10 @@
 use {
+    super::pyth_accumulator::MESSAGE_BUFFER_PID,
     crate::{
+        accounts_db::AccountShrinkThreshold,
+        accounts_index::{
+            AccountIndex, AccountSecondaryIndexes, AccountSecondaryIndexesIncludeExclude,
+        },
         bank::{
             pyth_accumulator::{get_accumulator_keys, ACCUMULATOR_RING_SIZE, ORACLE_PID},
             Bank,
@@ -25,6 +30,7 @@ use {
         epoch_schedule::EpochSchedule,
         feature::{self, Feature},
         feature_set,
+        genesis_config::GenesisConfig,
         hash::hashv,
         pubkey::Pubkey,
         signature::keypair_from_seed,
@@ -32,6 +38,21 @@ use {
     },
     std::{io::Read, mem::size_of, sync::Arc},
 };
+
+fn create_new_bank_for_tests_with_index(genesis_config: &GenesisConfig) -> Bank {
+    Bank::new_with_config_for_tests(
+        genesis_config,
+        AccountSecondaryIndexes {
+            keys: Some(AccountSecondaryIndexesIncludeExclude {
+                exclude: false,
+                keys: [*ORACLE_PID, *MESSAGE_BUFFER_PID].into_iter().collect(),
+            }),
+            indexes: [AccountIndex::ProgramId].into_iter().collect(),
+        },
+        false,
+        AccountShrinkThreshold::default(),
+    )
+}
 
 // Create Message Account Bytes
 //
@@ -107,7 +128,7 @@ fn test_update_accumulator_sysvar() {
     // due to slot 0 having special handling.
     let slots_in_epoch = 32;
     genesis_config.epoch_schedule = EpochSchedule::new(slots_in_epoch);
-    let mut bank = Bank::new_for_tests(&genesis_config);
+    let mut bank = create_new_bank_for_tests_with_index(&genesis_config);
     bank = new_from_parent(&Arc::new(bank));
     bank = new_from_parent(&Arc::new(bank));
 
@@ -392,7 +413,7 @@ fn test_update_accumulator_end_of_block() {
     // due to slot 0 having special handling.
     let slots_in_epoch = 32;
     genesis_config.epoch_schedule = EpochSchedule::new(slots_in_epoch);
-    let mut bank = Bank::new_for_tests(&genesis_config);
+    let mut bank = create_new_bank_for_tests_with_index(&genesis_config);
     bank = new_from_parent(&Arc::new(bank));
     bank = new_from_parent(&Arc::new(bank));
 
@@ -683,7 +704,7 @@ fn test_accumulator_v2(generate_buffers: [bool; 4]) {
     // due to slot 0 having special handling.
     let slots_in_epoch = 32;
     genesis_config.epoch_schedule = EpochSchedule::new(slots_in_epoch);
-    let mut bank = Bank::new_for_tests(&genesis_config);
+    let mut bank = create_new_bank_for_tests_with_index(&genesis_config);
 
     let generate_price = |seeds, generate_buffers: bool| {
         let (price_feed_key, _bump) = Pubkey::find_program_address(&[seeds], &ORACLE_PID);

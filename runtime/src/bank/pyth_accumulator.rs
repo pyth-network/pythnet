@@ -139,6 +139,10 @@ pub fn update_v1(
     let v1_messages = if use_message_buffers {
         let mut measure = Measure::start("update_v1_load_program_accounts");
 
+        assert!(
+            bank.account_indexes_include_key(&*MESSAGE_BUFFER_PID),
+            "MessageBuffer program account index missing"
+        );
         message_buffer_accounts = bank
             .get_filtered_indexed_accounts(
                 &IndexKey::ProgramId(*MESSAGE_BUFFER_PID),
@@ -383,6 +387,11 @@ fn post_accumulator_attestation(
 
 pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV1> {
     let mut measure = Measure::start("update_v2_load_program_accounts");
+
+    assert!(
+        bank.account_indexes_include_key(&*ORACLE_PID),
+        "Oracle program account index missing"
+    );
 
     let accounts = bank
         .get_filtered_indexed_accounts(
