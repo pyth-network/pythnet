@@ -1142,6 +1142,7 @@ fn test_get_accumulator_keys() {
         Pubkey::new_from_array(pythnet::WORMHOLE_PID),
         *ORACLE_PID,
         *STAKE_CAPS_PARAMETERS_ADDR,
+        *BATCH_PUBLISH_PID,
     ];
     assert_eq!(accumulator_keys, expected_pyth_keys);
 }
