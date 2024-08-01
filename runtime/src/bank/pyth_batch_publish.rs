@@ -11,6 +11,7 @@ use {
     thiserror::Error,
 };
 
+// TODO: move to the publish program
 #[allow(dead_code)]
 pub mod publisher_prices_account {
     use {
@@ -224,15 +225,16 @@ pub fn extract_batch_publish_prices(
         }
         let publisher = header.publisher.into();
         for price in prices {
+            let value = PublisherPriceValue {
+                publisher,
+                trading_status: price.trading_status(),
+                price: price.price,
+                confidence: price.confidence,
+            };
             all_prices
                 .entry(price.feed_index())
                 .or_default()
-                .push(PublisherPriceValue {
-                    publisher,
-                    trading_status: price.trading_status(),
-                    price: price.price,
-                    confidence: price.confidence,
-                });
+                .push(value);
         }
     }
     Ok(all_prices)
@@ -243,8 +245,7 @@ pub fn apply_published_prices(
     new_prices: &HashMap<u32, Vec<PublisherPriceValue>>,
     slot: Slot,
 ) -> bool {
-    // TODO: store index here or somewhere else?
-    let price_feed_index = price_data.unused_3_ as u32;
+    let price_feed_index = price_data.feed_index as u32;
     let mut any_update = false;
     for new_price in new_prices.get(&price_feed_index).unwrap_or(&Vec::new()) {
         match apply_published_price(price_data, new_price, slot) {
@@ -254,7 +255,7 @@ pub fn apply_published_prices(
             Err(err) => {
                 warn!(
                     "failed to apply publisher price to price feed {}: {}",
-                    price_data.unused_3_ as u32, err
+                    price_data.feed_index as u32, err
                 );
             }
         }
@@ -285,7 +286,7 @@ fn apply_published_price(
         .ok_or(ApplyPublishedPriceError::InvalidPublishersNum)?;
 
     let publisher_index = find_publisher_index(publishers, &new_price.publisher).ok_or(
-        ApplyPublishedPriceError::NoPermission(price_data.unused_3_ as u32, new_price.publisher),
+        ApplyPublishedPriceError::NoPermission(price_data.feed_index as u32, new_price.publisher),
     )?;
 
     // IMPORTANT: If the publisher does not meet the price/conf

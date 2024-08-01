@@ -1228,7 +1228,7 @@ fn test_batch_publish() {
             price_account.flags.insert(
                 PriceAccountFlags::ACCUMULATOR_V2 | PriceAccountFlags::MESSAGE_BUFFER_CLEARED,
             );
-            price_account.unused_3_ = index;
+            price_account.feed_index = index;
             price_account.comp_[0].pub_ = publishers[0].pubkey().to_bytes().into();
             price_account.comp_[1].pub_ = publishers[1].pubkey().to_bytes().into();
             price_account.num_ = 2;

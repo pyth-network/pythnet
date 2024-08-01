@@ -447,17 +447,11 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
     for (pubkey, mut account) in accounts {
         let mut price_account_data = account.data().to_owned();
         let price_account =
-            match pyth_oracle::validator::validate_price_account(&mut price_account_data) {
+            match pyth_oracle::validator::checked_load_price_account_mut(&mut price_account_data) {
                 Ok(data) => data,
-                Err(err) => match err {
-                    AggregationError::NotPriceFeedAccount => {
-                        continue;
-                    }
-                    AggregationError::V1AggregationMode | AggregationError::AlreadyAggregated => {
-                        any_v1_aggregations = true;
-                        continue;
-                    }
-                },
+                Err(_err) => {
+                    continue;
+                }
             };
 
         let mut need_save =
@@ -474,7 +468,7 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
                 need_save = true;
                 v2_messages.extend(messages);
             }
-            Err(err) => match dbg!(err) {
+            Err(err) => match err {
                 AggregationError::NotPriceFeedAccount => {}
                 AggregationError::V1AggregationMode | AggregationError::AlreadyAggregated => {
                     any_v1_aggregations = true;
