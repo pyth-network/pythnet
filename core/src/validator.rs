@@ -74,7 +74,7 @@ use {
         accounts_db::{AccountShrinkThreshold, AccountsDbConfig},
         accounts_index::AccountSecondaryIndexes,
         accounts_update_notifier_interface::AccountsUpdateNotifier,
-        bank::{pyth_accumulator, Bank},
+        bank::{pyth, Bank},
         bank_forks::BankForks,
         commitment::BlockCommitmentCache,
         cost_model::CostModel,
@@ -1521,7 +1521,7 @@ fn load_blockstore(
         }
     }
 
-    for (key_name, pk_res) in pyth_accumulator::get_accumulator_keys() {
+    for (key_name, pk_res) in pyth::accumulator::get_accumulator_keys() {
         match pk_res {
             Ok(pk) => info!("Accumulator {}: {}", key_name, pk),
             Err(err) => {

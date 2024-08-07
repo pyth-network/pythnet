@@ -1,6 +1,9 @@
 use {
-    super::{pyth_accumulator::BATCH_PUBLISH_PID, Bank},
-    crate::accounts_index::{IndexKey, ScanConfig, ScanError},
+    super::accumulator::BATCH_PUBLISH_PID,
+    crate::{
+        accounts_index::{IndexKey, ScanConfig, ScanError},
+        bank::Bank,
+    },
     log::warn,
     pyth_oracle::{
         find_publisher_index, get_status_for_conf_price_ratio, solana_program::pubkey::Pubkey,

@@ -198,11 +198,7 @@ mod builtin_programs;
 mod sysvar_cache;
 mod transaction_account_state_info;
 
-pub mod pyth_accumulator;
-mod pyth_batch_publish;
-
-#[cfg(test)]
-mod pyth_accumulator_tests;
+pub mod pyth;
 
 pub const SECONDS_PER_YEAR: f64 = 365.25 * 24.0 * 60.0 * 60.0;
 
@@ -1411,7 +1407,7 @@ impl Bank {
         // state before the accumulator is used.  bank is in a fully
         // updated state before the accumulator is used.
         if !accumulator_moved_to_end_of_block {
-            pyth_accumulator::update_accumulator(&bank);
+            pyth::accumulator::update_accumulator(&bank);
         }
 
         bank
@@ -1797,7 +1793,7 @@ impl Bank {
             // the accumulator sysvar updates.  sysvars are in a fully updated
             // state before the accumulator sysvar updates.
             if !accumulator_moved_to_end_of_block {
-                pyth_accumulator::update_accumulator(&new);
+                pyth::accumulator::update_accumulator(&new);
             }
         });
 
@@ -3239,7 +3235,7 @@ impl Bank {
             // other tasks when freezing to avoid any conflicts.
             if accumulator_moved_to_end_of_block {
                 let mut measure = Measure::start("accumulator");
-                pyth_accumulator::update_accumulator(self);
+                pyth::accumulator::update_accumulator(self);
                 measure.stop();
 
                 debug!(

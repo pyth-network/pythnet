@@ -1,21 +1,17 @@
 use {
-    super::pyth_accumulator::MESSAGE_BUFFER_PID,
     crate::{
-        accounts_db::AccountShrinkThreshold,
-        accounts_index::{
-            AccountIndex, AccountSecondaryIndexes, AccountSecondaryIndexesIncludeExclude,
-        },
         bank::{
-            pyth_accumulator::{
-                get_accumulator_keys, ACCUMULATOR_RING_SIZE, BATCH_PUBLISH_PID, ORACLE_PID,
-                STAKE_CAPS_PARAMETERS_ADDR,
+            pyth::{
+                accumulator::{
+                    get_accumulator_keys, ACCUMULATOR_RING_SIZE, BATCH_PUBLISH_PID, ORACLE_PID,
+                    STAKE_CAPS_PARAMETERS_ADDR,
+                },
+                tests::{create_new_bank_for_tests_with_index, new_from_parent},
             },
-            pyth_batch_publish::publisher_prices_account::{self, PublisherPrice},
             Bank,
         },
         genesis_utils::{create_genesis_config_with_leader, GenesisConfigInfo},
     },
-    bytemuck::{cast_slice, checked::from_bytes},
     byteorder::{ByteOrder, LittleEndian, ReadBytesExt},
     itertools::Itertools,
     pyth_oracle::{
@@ -36,7 +32,6 @@ use {
         epoch_schedule::EpochSchedule,
         feature::{self, Feature},
         feature_set,
-        genesis_config::GenesisConfig,
         hash::hashv,
         pubkey::Pubkey,
         signature::keypair_from_seed,
@@ -44,23 +39,6 @@ use {
     },
     std::{io::Read, mem::size_of, sync::Arc},
 };
-
-fn create_new_bank_for_tests_with_index(genesis_config: &GenesisConfig) -> Bank {
-    Bank::new_with_config_for_tests(
-        genesis_config,
-        AccountSecondaryIndexes {
-            keys: Some(AccountSecondaryIndexesIncludeExclude {
-                exclude: false,
-                keys: [*ORACLE_PID, *MESSAGE_BUFFER_PID, *BATCH_PUBLISH_PID]
-                    .into_iter()
-                    .collect(),
-            }),
-            indexes: [AccountIndex::ProgramId].into_iter().collect(),
-        },
-        false,
-        AccountShrinkThreshold::default(),
-    )
-}
 
 // Create Message Account Bytes
 //
@@ -398,10 +376,6 @@ fn test_update_accumulator_sysvar() {
     //      done in this test but can be moved to a separate test.
     // 2. Intentionally add corrupted accounts that do not appear in the accumulator.
     // 3. Check if message offset is > message size to prevent validator crash.
-}
-
-fn new_from_parent(parent: &Arc<Bank>) -> Bank {
-    Bank::new_from_parent(parent, &Pubkey::default(), parent.slot() + 1)
 }
 
 #[test]
@@ -1145,129 +1119,4 @@ fn test_get_accumulator_keys() {
         *BATCH_PUBLISH_PID,
     ];
     assert_eq!(accumulator_keys, expected_pyth_keys);
-}
-
-#[test]
-fn test_batch_publish() {
-    let leader_pubkey = solana_sdk::pubkey::new_rand();
-    let GenesisConfigInfo {
-        mut genesis_config, ..
-    } = create_genesis_config_with_leader(5, &leader_pubkey, 3);
-
-    // Set epoch length to 32 so we can advance epochs quickly. We also skip past slot 0 here
-    // due to slot 0 having special handling.
-    let slots_in_epoch = 32;
-    genesis_config.epoch_schedule = EpochSchedule::new(slots_in_epoch);
-    let mut bank = create_new_bank_for_tests_with_index(&genesis_config);
-
-    let generate_publisher = |seed, new_prices| {
-        let publisher1_key = keypair_from_seed(seed).unwrap();
-
-        let (publisher1_prices_key, _bump) = Pubkey::find_program_address(
-            // TODO: real seed
-            &[
-                b"PUBLISHER_PRICES_ACCOUNT",
-                &publisher1_key.pubkey().to_bytes(),
-            ],
-            &BATCH_PUBLISH_PID,
-        );
-        let mut publisher1_prices_account =
-            AccountSharedData::new(42, publisher_prices_account::size(100), &BATCH_PUBLISH_PID);
-        {
-            let (header, prices) = publisher_prices_account::create(
-                publisher1_prices_account.data_mut(),
-                publisher1_key.pubkey().to_bytes(),
-            )
-            .unwrap();
-            publisher_prices_account::extend(header, prices, cast_slice(new_prices)).unwrap();
-        }
-        bank.store_account(&publisher1_prices_key, &publisher1_prices_account);
-
-        publisher1_key
-    };
-
-    let publishers = [
-        generate_publisher(
-            &[1u8; 32],
-            &[
-                PublisherPrice::new(1, 1, 10, 2).unwrap(),
-                PublisherPrice::new(2, 1, 20, 3).unwrap(),
-            ],
-        ),
-        generate_publisher(
-            &[2u8; 32],
-            &[
-                PublisherPrice::new(1, 1, 15, 2).unwrap(),
-                PublisherPrice::new(2, 1, 25, 3).unwrap(),
-            ],
-        ),
-    ];
-
-    let generate_price = |seeds, index| {
-        let (price_feed_key, _bump) = Pubkey::find_program_address(&[seeds], &ORACLE_PID);
-        let mut price_feed_account =
-            AccountSharedData::new(42, size_of::<PriceAccount>(), &ORACLE_PID);
-
-        let messages = {
-            let price_feed_info_key = &price_feed_key.to_bytes().into();
-            let price_feed_info_lamports = &mut 0;
-            let price_feed_info_owner = &ORACLE_PID.to_bytes().into();
-            let price_feed_info_data = price_feed_account.data_mut();
-            let price_feed_info = AccountInfo::new(
-                price_feed_info_key,
-                false,
-                true,
-                price_feed_info_lamports,
-                price_feed_info_data,
-                price_feed_info_owner,
-                false,
-                Epoch::default(),
-            );
-
-            let mut price_account = PriceAccount::initialize(&price_feed_info, 0).unwrap();
-            price_account.flags.insert(
-                PriceAccountFlags::ACCUMULATOR_V2 | PriceAccountFlags::MESSAGE_BUFFER_CLEARED,
-            );
-            price_account.feed_index = index;
-            price_account.comp_[0].pub_ = publishers[0].pubkey().to_bytes().into();
-            price_account.comp_[1].pub_ = publishers[1].pubkey().to_bytes().into();
-            price_account.num_ = 2;
-        };
-
-        bank.store_account(&price_feed_key, &price_feed_account);
-        (price_feed_key, messages)
-    };
-
-    assert!(bank
-        .feature_set
-        .is_active(&feature_set::enable_accumulator_sysvar::id()));
-    assert!(bank
-        .feature_set
-        .is_active(&feature_set::move_accumulator_to_end_of_block::id()));
-    assert!(bank
-        .feature_set
-        .is_active(&feature_set::undo_move_accumulator_to_end_of_block::id()));
-    assert!(bank
-        .feature_set
-        .is_active(&feature_set::redo_move_accumulator_to_end_of_block::id()));
-
-    let prices_with_messages = [
-        generate_price(b"seeds_1", 1),
-        generate_price(b"seeds_2", 2),
-        generate_price(b"seeds_3", 3),
-        generate_price(b"seeds_4", 4),
-    ];
-
-    bank = new_from_parent(&Arc::new(bank)); // Advance slot 1.
-    bank = new_from_parent(&Arc::new(bank)); // Advance slot 2.
-
-    let new_price_feed1_account = bank.get_account(&prices_with_messages[0].0).unwrap();
-    let new_price_feed1_data: &PriceAccount = from_bytes(new_price_feed1_account.data());
-    assert_eq!(new_price_feed1_data.comp_[0].latest_.price_, 10);
-    assert_eq!(new_price_feed1_data.comp_[1].latest_.price_, 15);
-
-    let new_price_feed2_account = bank.get_account(&prices_with_messages[1].0).unwrap();
-    let new_price_feed2_data: &PriceAccount = from_bytes(new_price_feed2_account.data());
-    assert_eq!(new_price_feed2_data.comp_[0].latest_.price_, 20);
-    assert_eq!(new_price_feed2_data.comp_[1].latest_.price_, 25);
 }

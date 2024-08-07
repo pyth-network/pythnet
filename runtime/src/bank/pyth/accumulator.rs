@@ -1,6 +1,9 @@
 use {
-    super::{pyth_batch_publish, Bank},
-    crate::accounts_index::{IndexKey, ScanConfig, ScanError},
+    super::batch_publish,
+    crate::{
+        accounts_index::{IndexKey, ScanConfig, ScanError},
+        bank::Bank,
+    },
     byteorder::{LittleEndian, ReadBytesExt},
     log::*,
     pyth_oracle::validator::AggregationError,
@@ -438,7 +441,7 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
         v2_messages.push(publisher_stake_caps_message);
     }
 
-    let new_prices = pyth_batch_publish::extract_batch_publish_prices(bank).unwrap_or_else(|err| {
+    let new_prices = batch_publish::extract_batch_publish_prices(bank).unwrap_or_else(|err| {
         warn!("extract_batch_publish_prices failed: {}", err);
         HashMap::new()
     });
@@ -455,7 +458,7 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
             };
 
         let mut need_save =
-            pyth_batch_publish::apply_published_prices(price_account, &new_prices, bank.slot());
+            batch_publish::apply_published_prices(price_account, &new_prices, bank.slot());
 
         // Perform Accumulation
         match pyth_oracle::validator::aggregate_price(
