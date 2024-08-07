@@ -245,9 +245,14 @@ pub fn apply_published_prices(
     new_prices: &HashMap<u32, Vec<PublisherPriceValue>>,
     slot: Slot,
 ) -> bool {
-    let price_feed_index = price_data.feed_index as u32;
+    if price_data.feed_index == 0 {
+        return false;
+    }
     let mut any_update = false;
-    for new_price in new_prices.get(&price_feed_index).unwrap_or(&Vec::new()) {
+    for new_price in new_prices
+        .get(&price_data.feed_index)
+        .unwrap_or(&Vec::new())
+    {
         match apply_published_price(price_data, new_price, slot) {
             Ok(()) => {
                 any_update = true;
@@ -255,7 +260,7 @@ pub fn apply_published_prices(
             Err(err) => {
                 warn!(
                     "failed to apply publisher price to price feed {}: {}",
-                    price_data.feed_index as u32, err
+                    price_data.feed_index, err
                 );
             }
         }
@@ -286,7 +291,7 @@ fn apply_published_price(
         .ok_or(ApplyPublishedPriceError::InvalidPublishersNum)?;
 
     let publisher_index = find_publisher_index(publishers, &new_price.publisher).ok_or(
-        ApplyPublishedPriceError::NoPermission(price_data.feed_index as u32, new_price.publisher),
+        ApplyPublishedPriceError::NoPermission(price_data.feed_index, new_price.publisher),
     )?;
 
     // IMPORTANT: If the publisher does not meet the price/conf

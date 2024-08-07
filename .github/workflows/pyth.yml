@@ -3,7 +3,7 @@ name: Check Pythnet
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [pyth-v1.14.17]
 jobs:
   test:
     runs-on: ubuntu-latest
