@@ -3616,6 +3616,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pyth-price-publisher"
+version = "0.1.0"
+source = "git+https://github.com/pyth-network/pyth-crosschain?branch=add-publisher-program#1fa5089f0f5abf1fe1d48ba0dda489843fcd545a"
+dependencies = [
+ "bytemuck",
+ "solana-program 1.14.17",
+ "thiserror",
+]
+
+[[package]]
 name = "pythnet-sdk"
 version = "1.13.6"
 source = "git+https://github.com/pyth-network/pyth-crosschain?rev=33f901aa45f4f0005aa5a84a1479b78ca9033074#33f901aa45f4f0005aa5a84a1479b78ca9033074"
@@ -6200,6 +6210,7 @@ dependencies = [
  "once_cell",
  "ouroboros",
  "pyth-oracle",
+ "pyth-price-publisher",
  "pythnet-sdk 1.13.6",
  "rand 0.7.3",
  "rand_chacha 0.2.2",

@@ -2,7 +2,6 @@ use {
     crate::{
         bank::pyth::{
             accumulator::{BATCH_PUBLISH_PID, ORACLE_PID},
-            batch_publish::publisher_prices_account::{self, PublisherPrice},
             tests::{create_new_bank_for_tests_with_index, new_from_parent},
         },
         genesis_utils::{create_genesis_config_with_leader, GenesisConfigInfo},
@@ -10,6 +9,9 @@ use {
     bytemuck::{cast_slice, checked::from_bytes},
     pyth_oracle::{
         solana_program::account_info::AccountInfo, PriceAccount, PriceAccountFlags, PythAccount,
+    },
+    pyth_price_publisher::accounts::publisher_prices::{
+        self as publisher_prices_account, PublisherPrice,
     },
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount, WritableAccount},
@@ -40,11 +42,7 @@ fn test_batch_publish() {
         let publisher1_key = keypair_from_seed(seed).unwrap();
 
         let (publisher1_prices_key, _bump) = Pubkey::find_program_address(
-            // TODO: real seed
-            &[
-                b"PUBLISHER_PRICES_ACCOUNT",
-                &publisher1_key.pubkey().to_bytes(),
-            ],
+            &[b"BUFFER", &publisher1_key.pubkey().to_bytes()],
             &BATCH_PUBLISH_PID,
         );
         let mut publisher1_prices_account =

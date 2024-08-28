@@ -3214,12 +3214,15 @@ fn process_account_indexes(matches: &ArgMatches) -> AccountSecondaryIndexes {
             );
     }
 
-    if exclude_keys
-        && (account_indexes_exclude_keys.contains(&*ORACLE_PID)
-            || account_indexes_exclude_keys.contains(&*MESSAGE_BUFFER_PID)
-            || account_indexes_exclude_keys.contains(&*BATCH_PUBLISH_PID))
-    {
-        panic!("The oracle program id and message buffer program id must *not* be excluded from the account index.");
+    if exclude_keys {
+        for key in &[&*ORACLE_PID, &*MESSAGE_BUFFER_PID, &*BATCH_PUBLISH_PID] {
+            if account_indexes_exclude_keys.contains(key) {
+                panic!(
+                    "This key must *not* be excluded from the account index: {}",
+                    key
+                );
+            }
+        }
     }
 
     let keys = if !account_indexes.is_empty() && (exclude_keys || include_keys) {

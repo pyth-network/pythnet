@@ -5,6 +5,7 @@ use {
         bank::Bank,
     },
     byteorder::{LittleEndian, ReadBytesExt},
+    itertools::Itertools,
     log::*,
     pyth_oracle::validator::AggregationError,
     pythnet_sdk::{
@@ -441,7 +442,7 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
         v2_messages.push(publisher_stake_caps_message);
     }
 
-    let new_prices = batch_publish::extract_batch_publish_prices(bank).unwrap_or_else(|err| {
+    let mut new_prices = batch_publish::extract_batch_publish_prices(bank).unwrap_or_else(|err| {
         warn!("extract_batch_publish_prices failed: {}", err);
         HashMap::new()
     });
@@ -458,7 +459,7 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
             };
 
         let mut need_save =
-            batch_publish::apply_published_prices(price_account, &new_prices, bank.slot());
+            batch_publish::apply_published_prices(price_account, &mut new_prices, bank.slot());
 
         // Perform Accumulation
         match pyth_oracle::validator::aggregate_price(
@@ -482,6 +483,12 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
             account.set_data(price_account_data);
             bank.store_account_and_update_capitalization(&pubkey, &account);
         }
+    }
+    if !new_prices.is_empty() {
+        warn!(
+            "pyth batch publish: missing price feed accounts for indexes: {}",
+            new_prices.keys().join(", ")
+        );
     }
 
     measure.stop();
