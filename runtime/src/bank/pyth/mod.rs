@@ -1,8 +1,10 @@
-use accumulator::{
-    ACCUMULATOR_EMITTER_ADDR, ACCUMULATOR_SEQUENCE_ADDR, BATCH_PUBLISH_PID, MESSAGE_BUFFER_PID,
-    ORACLE_PID, STAKE_CAPS_PARAMETERS_ADDR, WORMHOLE_PID,
+use {
+    accumulator::{
+        ACCUMULATOR_EMITTER_ADDR, ACCUMULATOR_SEQUENCE_ADDR, BATCH_PUBLISH_PID, MESSAGE_BUFFER_PID,
+        ORACLE_PID, STAKE_CAPS_PARAMETERS_ADDR, WORMHOLE_PID,
+    },
+    solana_sdk::pubkey::Pubkey,
 };
-use solana_sdk::pubkey::Pubkey;
 
 pub mod accumulator;
 mod batch_publish;
