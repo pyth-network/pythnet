@@ -3,9 +3,10 @@ use {
         bank::{
             pyth::{
                 accumulator::{
-                    get_accumulator_keys, ACCUMULATOR_RING_SIZE, BATCH_PUBLISH_PID, ORACLE_PID,
+                    ACCUMULATOR_RING_SIZE, BATCH_PUBLISH_PID, ORACLE_PID,
                     STAKE_CAPS_PARAMETERS_ADDR,
                 },
+                get_pyth_keys,
                 tests::{create_new_bank_for_tests_with_index, new_from_parent},
             },
             Bank,
@@ -1105,10 +1106,7 @@ fn test_publisher_stake_caps() {
 #[test]
 fn test_get_accumulator_keys() {
     use pythnet_sdk::{pythnet, ACCUMULATOR_EMITTER_ADDRESS, MESSAGE_BUFFER_PID};
-    let accumulator_keys: Vec<Pubkey> = get_accumulator_keys()
-        .iter()
-        .map(|(_, pk_res)| *pk_res.as_ref().unwrap())
-        .collect();
+    let accumulator_keys: Vec<Pubkey> = get_pyth_keys().iter().map(|(_, pk)| *pk).collect();
     let expected_pyth_keys = vec![
         Pubkey::new_from_array(MESSAGE_BUFFER_PID),
         Pubkey::new_from_array(ACCUMULATOR_EMITTER_ADDRESS),

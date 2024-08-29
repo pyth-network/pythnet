@@ -130,26 +130,6 @@ fn env_pubkey_or(var: &str, default: Pubkey) -> Pubkey {
     }
 }
 
-/// Get all accumulator related pubkeys from environment variables
-/// or return default if the variable is not set.
-pub fn get_accumulator_keys() -> Vec<(
-    &'static str,
-    std::result::Result<Pubkey, AccumulatorUpdateErrorV1>,
-)> {
-    vec![
-        ("MESSAGE_BUFFER_PID", Ok(*MESSAGE_BUFFER_PID)),
-        ("ACCUMULATOR_EMITTER_ADDR", Ok(*ACCUMULATOR_EMITTER_ADDR)),
-        ("ACCUMULATOR_SEQUENCE_ADDR", Ok(*ACCUMULATOR_SEQUENCE_ADDR)),
-        ("WORMHOLE_PID", Ok(*WORMHOLE_PID)),
-        ("ORACLE_PID", Ok(*ORACLE_PID)),
-        (
-            "STAKE_CAPS_PARAMETERS_ADDR",
-            Ok(*STAKE_CAPS_PARAMETERS_ADDR),
-        ),
-        ("BATCH_PUBLISH_PID", Ok(*BATCH_PUBLISH_PID)),
-    ]
-}
-
 pub fn update_v1(
     bank: &Bank,
     v2_messages: &[Vec<u8>],
