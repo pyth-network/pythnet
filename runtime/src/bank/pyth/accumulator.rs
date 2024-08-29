@@ -422,10 +422,13 @@ pub fn update_v2(bank: &Bank) -> std::result::Result<(), AccumulatorUpdateErrorV
         v2_messages.push(publisher_stake_caps_message);
     }
 
+    let mut measure = Measure::start("extract_batch_publish_prices");
     let mut new_prices = batch_publish::extract_batch_publish_prices(bank).unwrap_or_else(|err| {
         warn!("extract_batch_publish_prices failed: {}", err);
         HashMap::new()
     });
+    measure.stop();
+    debug!("batch publish: loaded prices in {}us", measure.as_us());
 
     let mut measure = Measure::start("update_v2_aggregate_price");
     for (pubkey, mut account) in accounts {

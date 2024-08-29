@@ -66,6 +66,13 @@ fn test_batch_publish() {
             &[
                 PublisherPrice::new(1, 1, 10, 2).unwrap(),
                 PublisherPrice::new(2, 1, 20, 3).unwrap(),
+                // Attempt to publish with price_index == 0,
+                // but it will not be applied.
+                PublisherPrice {
+                    trading_status_and_feed_index: 0,
+                    price: 30,
+                    confidence: 35,
+                },
             ],
         ),
         generate_publisher(
@@ -129,7 +136,7 @@ fn test_batch_publish() {
         generate_price(b"seeds_1", 1),
         generate_price(b"seeds_2", 2),
         generate_price(b"seeds_3", 3),
-        generate_price(b"seeds_4", 4),
+        generate_price(b"seeds_4", 0),
     ];
 
     bank = new_from_parent(&Arc::new(bank)); // Advance slot 1.
@@ -138,10 +145,16 @@ fn test_batch_publish() {
     let new_price_feed1_account = bank.get_account(&prices_with_messages[0].0).unwrap();
     let new_price_feed1_data: &PriceAccount = from_bytes(new_price_feed1_account.data());
     assert_eq!(new_price_feed1_data.comp_[0].latest_.price_, 10);
+    assert_eq!(new_price_feed1_data.comp_[0].latest_.conf_, 2);
+    assert_eq!(new_price_feed1_data.comp_[0].latest_.status_, 1);
     assert_eq!(new_price_feed1_data.comp_[1].latest_.price_, 15);
 
     let new_price_feed2_account = bank.get_account(&prices_with_messages[1].0).unwrap();
     let new_price_feed2_data: &PriceAccount = from_bytes(new_price_feed2_account.data());
     assert_eq!(new_price_feed2_data.comp_[0].latest_.price_, 20);
     assert_eq!(new_price_feed2_data.comp_[1].latest_.price_, 25);
+
+    let new_price_feed4_account = bank.get_account(&prices_with_messages[3].0).unwrap();
+    let new_price_feed4_data: &PriceAccount = from_bytes(new_price_feed4_account.data());
+    assert_eq!(new_price_feed4_data.comp_[0].latest_.price_, 0);
 }
