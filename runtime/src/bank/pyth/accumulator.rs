@@ -60,8 +60,7 @@ lazy_static! {
     );
     pub static ref BATCH_PUBLISH_PID: Pubkey = env_pubkey_or(
         "BATCH_PUBLISH_PID",
-        // TODO: replace with real program id
-        "FsJ3A3u2vn5cTVofAjvy6y5kwABJAqYWpe4975bi2epA"
+        "3m6sv6HGqEbuyLV84mD7rJn4MAC9LhUa1y1AUNVqcPfr"
             .parse()
             .unwrap(),
     );
