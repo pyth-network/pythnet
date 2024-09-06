@@ -9,7 +9,7 @@ use {
         find_publisher_index, get_status_for_conf_price_ratio, solana_program::pubkey::Pubkey,
         OracleError, PriceAccount,
     },
-    pyth_price_publisher::accounts::publisher_prices as publisher_prices_account,
+    pyth_price_publisher::accounts::buffer,
     solana_sdk::{account::ReadableAccount, clock::Slot},
     std::collections::HashMap,
     thiserror::Error,
@@ -37,7 +37,7 @@ pub fn extract_batch_publish_prices(
         "Oracle program account index missing"
     );
 
-    let publisher_prices_accounts = bank
+    let publish_program_accounts = bank
         .get_filtered_indexed_accounts(
             &IndexKey::ProgramId(*BATCH_PUBLISH_PID),
             |account| account.owner() == &*BATCH_PUBLISH_PID,
@@ -49,11 +49,11 @@ pub fn extract_batch_publish_prices(
     let mut all_prices = HashMap::<u32, Vec<PublisherPriceValue>>::new();
     let mut num_found_accounts = 0;
     let mut num_found_prices = 0;
-    for (account_key, account) in publisher_prices_accounts {
-        if !publisher_prices_account::format_matches(account.data()) {
+    for (account_key, account) in publish_program_accounts {
+        if !buffer::format_matches(account.data()) {
             continue;
         }
-        let (header, prices) = match publisher_prices_account::read(account.data()) {
+        let (header, prices) = match buffer::read(account.data()) {
             Ok(r) => r,
             Err(err) => {
                 warn!("invalid publisher prices account {}: {}", account_key, err);

@@ -10,8 +10,12 @@ use {
     pyth_oracle::{
         solana_program::account_info::AccountInfo, PriceAccount, PriceAccountFlags, PythAccount,
     },
-    pyth_price_publisher::accounts::publisher_prices::{
-        self as publisher_prices_account, PublisherPrice,
+    pyth_price_publisher::{
+        accounts::{
+            buffer::{self, BufferedPrice},
+            publisher_config,
+        },
+        instruction::PUBLISHER_CONFIG_SEED,
     },
     solana_sdk::{
         account::{AccountSharedData, ReadableAccount, WritableAccount},
@@ -38,37 +42,55 @@ fn test_batch_publish() {
     genesis_config.epoch_schedule = EpochSchedule::new(slots_in_epoch);
     let mut bank = create_new_bank_for_tests_with_index(&genesis_config);
 
-    let generate_publisher = |seed, new_prices| {
-        let publisher1_key = keypair_from_seed(seed).unwrap();
+    let generate_publisher = |seed, seed2, new_prices| {
+        let publisher_key = keypair_from_seed(seed).unwrap();
 
-        let (publisher1_prices_key, _bump) = Pubkey::find_program_address(
-            &[b"BUFFER", &publisher1_key.pubkey().to_bytes()],
+        let (publisher_config_key, _bump) = Pubkey::find_program_address(
+            &[
+                PUBLISHER_CONFIG_SEED.as_bytes(),
+                &publisher_key.pubkey().to_bytes(),
+            ],
             &BATCH_PUBLISH_PID,
         );
-        let mut publisher1_prices_account =
-            AccountSharedData::new(42, publisher_prices_account::size(100), &BATCH_PUBLISH_PID);
+        let publisher_buffer_key =
+            Pubkey::create_with_seed(&leader_pubkey, seed2, &BATCH_PUBLISH_PID).unwrap();
+
+        let mut publisher_config_account =
+            AccountSharedData::new(42, publisher_config::SIZE, &BATCH_PUBLISH_PID);
+
+        publisher_config::create(
+            publisher_config_account.data_mut(),
+            publisher_key.pubkey().to_bytes(),
+            publisher_buffer_key.to_bytes(),
+        )
+        .unwrap();
+        bank.store_account(&publisher_config_key, &publisher_config_account);
+
+        let mut publisher_buffer_account =
+            AccountSharedData::new(42, buffer::size(100), &BATCH_PUBLISH_PID);
         {
-            let (header, prices) = publisher_prices_account::create(
-                publisher1_prices_account.data_mut(),
-                publisher1_key.pubkey().to_bytes(),
+            let (header, prices) = buffer::create(
+                publisher_buffer_account.data_mut(),
+                publisher_key.pubkey().to_bytes(),
             )
             .unwrap();
-            publisher_prices_account::extend(header, prices, cast_slice(new_prices)).unwrap();
+            buffer::extend(header, prices, cast_slice(new_prices)).unwrap();
         }
-        bank.store_account(&publisher1_prices_key, &publisher1_prices_account);
+        bank.store_account(&publisher_buffer_key, &publisher_buffer_account);
 
-        publisher1_key
+        publisher_key
     };
 
     let publishers = [
         generate_publisher(
             &[1u8; 32],
+            "seed1",
             &[
-                PublisherPrice::new(1, 1, 10, 2).unwrap(),
-                PublisherPrice::new(2, 1, 20, 3).unwrap(),
+                BufferedPrice::new(1, 1, 10, 2).unwrap(),
+                BufferedPrice::new(2, 1, 20, 3).unwrap(),
                 // Attempt to publish with price_index == 0,
                 // but it will not be applied.
-                PublisherPrice {
+                BufferedPrice {
                     trading_status_and_feed_index: 0,
                     price: 30,
                     confidence: 35,
@@ -77,9 +99,10 @@ fn test_batch_publish() {
         ),
         generate_publisher(
             &[2u8; 32],
+            "seed2",
             &[
-                PublisherPrice::new(1, 1, 15, 2).unwrap(),
-                PublisherPrice::new(2, 1, 25, 3).unwrap(),
+                BufferedPrice::new(1, 1, 15, 2).unwrap(),
+                BufferedPrice::new(2, 1, 25, 3).unwrap(),
             ],
         ),
     ];

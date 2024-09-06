@@ -3618,10 +3618,9 @@ dependencies = [
 [[package]]
 name = "pyth-price-publisher"
 version = "0.1.0"
-source = "git+https://github.com/pyth-network/pyth-crosschain?branch=add-publisher-program#1fa5089f0f5abf1fe1d48ba0dda489843fcd545a"
+source = "git+https://github.com/pyth-network/pyth-crosschain?branch=add-publisher-program#b25700bc8c56f66e9436c949475aa422c523fa71"
 dependencies = [
  "bytemuck",
- "solana-program 1.14.17",
  "thiserror",
 ]
 
