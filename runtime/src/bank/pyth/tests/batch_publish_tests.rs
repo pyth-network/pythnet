@@ -10,7 +10,7 @@ use {
     pyth_oracle::{
         solana_program::account_info::AccountInfo, PriceAccount, PriceAccountFlags, PythAccount,
     },
-    pyth_price_publisher::{
+    pyth_price_store::{
         accounts::{
             buffer::{self, BufferedPrice},
             publisher_config,
@@ -74,7 +74,7 @@ fn test_batch_publish() {
                 publisher_key.pubkey().to_bytes(),
             )
             .unwrap();
-            buffer::extend(header, prices, cast_slice(new_prices)).unwrap();
+            buffer::update(header, prices, bank.slot(), cast_slice(new_prices)).unwrap();
         }
         bank.store_account(&publisher_buffer_key, &publisher_buffer_account);
 

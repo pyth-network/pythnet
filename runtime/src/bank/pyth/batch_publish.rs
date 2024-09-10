@@ -9,7 +9,7 @@ use {
         find_publisher_index, get_status_for_conf_price_ratio, solana_program::pubkey::Pubkey,
         OracleError, PriceAccount,
     },
-    pyth_price_publisher::accounts::buffer,
+    pyth_price_store::accounts::buffer,
     solana_sdk::{account::ReadableAccount, clock::Slot},
     std::collections::HashMap,
     thiserror::Error,

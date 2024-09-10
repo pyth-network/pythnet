@@ -3616,9 +3616,10 @@ dependencies = [
 ]
 
 [[package]]
-name = "pyth-price-publisher"
+name = "pyth-price-store"
 version = "0.1.0"
-source = "git+https://github.com/pyth-network/pyth-crosschain?branch=add-publisher-program#b25700bc8c56f66e9436c949475aa422c523fa71"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2bbb76932606741e8b690d51d3e78df620df4a13474a2ca5f53ded5f70522cdc"
 dependencies = [
  "bytemuck",
  "thiserror",
@@ -6209,7 +6210,7 @@ dependencies = [
  "once_cell",
  "ouroboros",
  "pyth-oracle",
- "pyth-price-publisher",
+ "pyth-price-store",
  "pythnet-sdk 1.13.6",
  "rand 0.7.3",
  "rand_chacha 0.2.2",

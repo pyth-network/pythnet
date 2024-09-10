@@ -37,7 +37,7 @@ once_cell = "1.12.0"
 ouroboros = "0.15.0"
 pyth-oracle = { git = "https://github.com/pyth-network/pyth-client", rev = "256b57", features = ["library"] }
 pythnet-sdk = { git = "https://github.com/pyth-network/pyth-crosschain", version = "1.13.6", rev = "33f901aa45f4f0005aa5a84a1479b78ca9033074" }
-pyth-price-publisher = { git = "https://github.com/pyth-network/pyth-crosschain", branch = "add-publisher-program" }
+pyth-price-store = "0.1.0"
 rand = "0.7.0"
 rayon = "1.5.3"
 regex = "1.5.6"
