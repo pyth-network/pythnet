@@ -3,8 +3,7 @@ use {
         bank::{
             pyth::{
                 accumulator::{
-                    ACCUMULATOR_RING_SIZE, BATCH_PUBLISH_PID, ORACLE_PID,
-                    STAKE_CAPS_PARAMETERS_ADDR,
+                    ACCUMULATOR_RING_SIZE, ORACLE_PID, PRICE_STORE_PID, STAKE_CAPS_PARAMETERS_ADDR,
                 },
                 get_pyth_keys,
                 tests::{create_new_bank_for_tests_with_index, new_from_parent},
@@ -1114,7 +1113,7 @@ fn test_get_accumulator_keys() {
         Pubkey::new_from_array(pythnet::WORMHOLE_PID),
         *ORACLE_PID,
         *STAKE_CAPS_PARAMETERS_ADDR,
-        *BATCH_PUBLISH_PID,
+        *PRICE_STORE_PID,
     ];
     assert_eq!(accumulator_keys, expected_pyth_keys);
 }

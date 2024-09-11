@@ -1,5 +1,5 @@
 use {
-    super::accumulator::BATCH_PUBLISH_PID,
+    super::accumulator::PRICE_STORE_PID,
     crate::{
         accounts_index::{IndexKey, ScanConfig, ScanError},
         bank::Bank,
@@ -33,14 +33,14 @@ pub fn extract_batch_publish_prices(
     bank: &Bank,
 ) -> Result<HashMap<u32, Vec<PublisherPriceValue>>, HandleBatchPublishError> {
     assert!(
-        bank.account_indexes_include_key(&*BATCH_PUBLISH_PID),
+        bank.account_indexes_include_key(&*PRICE_STORE_PID),
         "Oracle program account index missing"
     );
 
     let publish_program_accounts = bank
         .get_filtered_indexed_accounts(
-            &IndexKey::ProgramId(*BATCH_PUBLISH_PID),
-            |account| account.owner() == &*BATCH_PUBLISH_PID,
+            &IndexKey::ProgramId(*PRICE_STORE_PID),
+            |account| account.owner() == &*PRICE_STORE_PID,
             &ScanConfig::new(true),
             None,
         )

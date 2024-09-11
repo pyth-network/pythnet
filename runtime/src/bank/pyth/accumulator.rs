@@ -58,8 +58,8 @@ lazy_static! {
             .parse()
             .unwrap(),
     );
-    pub static ref BATCH_PUBLISH_PID: Pubkey = env_pubkey_or(
-        "BATCH_PUBLISH_PID",
+    pub static ref PRICE_STORE_PID: Pubkey = env_pubkey_or(
+        "PRICE_STORE_PID",
         "3m6sv6HGqEbuyLV84mD7rJn4MAC9LhUa1y1AUNVqcPfr"
             .parse()
             .unwrap(),

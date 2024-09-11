@@ -1,7 +1,7 @@
 use {
     crate::{
         bank::pyth::{
-            accumulator::{BATCH_PUBLISH_PID, ORACLE_PID},
+            accumulator::{ORACLE_PID, PRICE_STORE_PID},
             tests::{create_new_bank_for_tests_with_index, new_from_parent},
         },
         genesis_utils::{create_genesis_config_with_leader, GenesisConfigInfo},
@@ -50,13 +50,13 @@ fn test_batch_publish() {
                 PUBLISHER_CONFIG_SEED.as_bytes(),
                 &publisher_key.pubkey().to_bytes(),
             ],
-            &BATCH_PUBLISH_PID,
+            &PRICE_STORE_PID,
         );
         let publisher_buffer_key =
-            Pubkey::create_with_seed(&leader_pubkey, seed2, &BATCH_PUBLISH_PID).unwrap();
+            Pubkey::create_with_seed(&leader_pubkey, seed2, &PRICE_STORE_PID).unwrap();
 
         let mut publisher_config_account =
-            AccountSharedData::new(42, publisher_config::SIZE, &BATCH_PUBLISH_PID);
+            AccountSharedData::new(42, publisher_config::SIZE, &PRICE_STORE_PID);
 
         publisher_config::create(
             publisher_config_account.data_mut(),
@@ -67,7 +67,7 @@ fn test_batch_publish() {
         bank.store_account(&publisher_config_key, &publisher_config_account);
 
         let mut publisher_buffer_account =
-            AccountSharedData::new(42, buffer::size(100), &BATCH_PUBLISH_PID);
+            AccountSharedData::new(42, buffer::size(100), &PRICE_STORE_PID);
         {
             let (header, prices) = buffer::create(
                 publisher_buffer_account.data_mut(),

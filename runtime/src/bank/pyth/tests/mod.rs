@@ -1,5 +1,5 @@
 use {
-    super::accumulator::{BATCH_PUBLISH_PID, MESSAGE_BUFFER_PID, ORACLE_PID},
+    super::accumulator::{MESSAGE_BUFFER_PID, ORACLE_PID, PRICE_STORE_PID},
     crate::{
         accounts_db::AccountShrinkThreshold,
         accounts_index::{
@@ -24,7 +24,7 @@ fn create_new_bank_for_tests_with_index(genesis_config: &GenesisConfig) -> Bank 
         AccountSecondaryIndexes {
             keys: Some(AccountSecondaryIndexesIncludeExclude {
                 exclude: false,
-                keys: [*ORACLE_PID, *MESSAGE_BUFFER_PID, *BATCH_PUBLISH_PID]
+                keys: [*ORACLE_PID, *MESSAGE_BUFFER_PID, *PRICE_STORE_PID]
                     .into_iter()
                     .collect(),
             }),
