@@ -6,7 +6,7 @@ on:
     branches: [pyth-v1.14.17]
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -22,7 +22,7 @@ jobs:
       - name: Run tests
         run: cargo test -p solana-runtime pyth
   clippy:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
@@ -38,7 +38,7 @@ jobs:
       - name: Check clippy
         run: cargo clippy --bins --tests --examples -- --deny warnings
   format:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v2
       - uses: actions-rs/toolchain@v1
