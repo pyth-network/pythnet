@@ -61,7 +61,7 @@ use {
         vote_sender_types::ReplayVoteSender,
     },
     solana_sdk::{
-        clock::{BankId, Slot, MAX_PROCESSING_AGE, NUM_CONSECUTIVE_LEADER_SLOTS},
+        clock::{BankId, Slot, NUM_CONSECUTIVE_LEADER_SLOTS, SLOT_MS},
         feature_set,
         genesis_config::ClusterType,
         hash::Hash,
@@ -90,7 +90,8 @@ pub const MAX_UNCONFIRMED_SLOTS: usize = 5;
 pub const DUPLICATE_LIVENESS_THRESHOLD: f64 = 0.1;
 pub const DUPLICATE_THRESHOLD: f64 = 1.0 - SWITCH_FORK_THRESHOLD - DUPLICATE_LIVENESS_THRESHOLD;
 const MAX_VOTE_SIGNATURES: usize = 200;
-const MAX_VOTE_REFRESH_INTERVAL_MILLIS: usize = 5000;
+const VOTE_EXPIRATION_NUM_SLOTS: usize = 8;
+const MAX_VOTE_REFRESH_INTERVAL_MILLIS: usize = SLOT_MS as usize * VOTE_EXPIRATION_NUM_SLOTS;
 // Expect this number to be small enough to minimize thread pool overhead while large enough
 // to be able to replay all active forks at the same time in most cases.
 const MAX_CONCURRENT_FORKS_TO_REPLAY: usize = 4;
@@ -2150,9 +2151,9 @@ impl ReplayStage {
         }
         if my_latest_landed_vote >= last_voted_slot
             || heaviest_bank_on_same_fork
-                .is_hash_valid_for_age(&tower.last_vote_tx_blockhash(), MAX_PROCESSING_AGE)
+                .is_hash_valid_for_age(&tower.last_vote_tx_blockhash(), VOTE_EXPIRATION_NUM_SLOTS)
             || {
-                // In order to avoid voting on multiple forks all past MAX_PROCESSING_AGE that don't
+                // In order to avoid voting on multiple forks all past VOTE_EXPIRATION_NUM_SLOTS that don't
                 // include the last voted blockhash
                 last_vote_refresh_time
                     .last_refresh_time
@@ -6663,7 +6664,7 @@ pub(crate) mod tests {
         // Create a bank where the last vote transaction will have expired
         let expired_bank = {
             let mut parent_bank = bank2.clone();
-            for _ in 0..MAX_PROCESSING_AGE {
+            for _ in 0..VOTE_EXPIRATION_NUM_SLOTS {
                 parent_bank = Arc::new(Bank::new_from_parent(
                     &parent_bank,
                     &Pubkey::default(),
